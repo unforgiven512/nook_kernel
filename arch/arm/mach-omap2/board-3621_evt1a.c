@@ -417,9 +417,9 @@ static struct regulator_consumer_supply boxer_vdds_dsi_supply = {
 };
 
 #ifdef CONFIG_FB_OMAP2
-static struct resource boxer_vout_resource[2] = { };
-//static struct resource boxer_vout_resource[3 - CONFIG_FB_OMAP2_NUM_FBS] = {
-//};
+//static struct resource boxer_vout_resource[2] = { };
+static struct resource boxer_vout_resource[3 - CONFIG_FB_OMAP2_NUM_FBS] = {
+};
 #else
 static struct resource boxer_vout_resource[2] = {
 };
@@ -941,7 +941,7 @@ int  cyttsp_dev_init(int resource)
 static struct cyttsp_platform_data cyttsp_platform_data = {
 	.maxx = 480,
 	.maxy = 800,
-	.flags = 0,
+	.flags = SYNAPTICS_SWAP_XY | SYNAPTICS_FLIP_X,
 	.gen = CY_GEN3,
 	.use_st = CY_USE_ST,
 	.use_mt = CY_USE_MT,
@@ -1060,11 +1060,11 @@ struct kxtf9_platform_data kxtf9_platform_data_here = {
 		// Map the axes from the sensor to the device.
 		
 		//. SETTINGS FOR THE EVT1A TEST RIG:
-        .axis_map_x     = 1,
-        .axis_map_y     = 0,
+        .axis_map_x     = 0,
+        .axis_map_y     = 1,
         .axis_map_z     = 2,
         .negate_x       = 1,
-        .negate_y       = 0,
+        .negate_y       = 1,
         .negate_z       = 0,
 		
 		//. SETTINGS FOR THE ENCORE PRODUCT:

@@ -2532,8 +2532,8 @@ static int __devinit cyttsp_probe(struct i2c_client *client,
 
                 	if(GET_BOOTLOADERMODE(g_bl_data.bl_status)){
 				printk("\ncyttsp::found BL, Overriding maxx & maxy\n");
-				ts->platform_data->maxx=600;
-				ts->platform_data->maxy=1024;
+				ts->platform_data->maxx=1024;
+				ts->platform_data->maxy=600;
 			}
 			else {
 				printk("\ncyttsp::BL NOT FOUND\n");
