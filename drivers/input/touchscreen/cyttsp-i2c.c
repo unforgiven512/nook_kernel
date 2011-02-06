@@ -2588,6 +2588,12 @@ exit:
 		retval = 0;
 	}
 
+	
+	// let the driver sleep and wake up again to fix first startup sluginess
+	cyttsp_suspend(ts->client, PMSG_SUSPEND);
+	msleep(100);
+	cyttsp_resume(ts->client);
+
 	return retval;
 err3:
     regulator_disable(ts->reg);
