@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * IO manager interface: Manages IO between CHNL and MSG.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,29 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== io.c ========
+ *  Description:
+ *      IO manager interface: Manages IO between CHNL and MSG.
+ *
+ *  Public Functions:
+ *      IO_Create
+ *      IO_Destroy
+ *      IO_Exit
+ *      IO_Init
+ *      IO_OnLoaded
+ *
+ *  Notes:
+ *      This interface is basically a pass through to the WMD IO functions.
+ *
+ *! Revision History:
+ *! ================
+ *! 24-Feb-2003 swa 	PMGR Code review comments incorporated.
+ *! 04-Apr-2001 rr      WSX_STATUS initialized in IO_Create.
+ *! 07-Nov-2000 jeh     Created.
  */
 
 /*  ----------------------------------- Host OS */
@@ -65,23 +86,31 @@ DSP_STATUS IO_Create(OUT struct IO_MGR **phIOMgr, struct DEV_OBJECT *hDevObject,
 	DBC_Require(phIOMgr != NULL);
 	DBC_Require(pMgrAttrs != NULL);
 
+	GT_3trace(IO_DebugMask, GT_ENTER, "Entered IO_Create: phIOMgr: 0x%x\t "
+		 "hDevObject: 0x%x\tpMgrAttrs: 0x%x\n",
+		 phIOMgr, hDevObject, pMgrAttrs);
+
 	*phIOMgr = NULL;
 
 	/* A memory base of 0 implies no memory base:  */
-	if ((pMgrAttrs->dwSMBase != 0) && (pMgrAttrs->uSMLength == 0))
+	if ((pMgrAttrs->dwSMBase != 0) && (pMgrAttrs->uSMLength == 0)) {
 		status = CHNL_E_INVALIDMEMBASE;
+		GT_0trace(IO_DebugMask, GT_7CLASS,
+			 "IO_Create:Invalid Mem Base\n");
+	}
 
-	if (pMgrAttrs->uWordSize == 0)
+	if (pMgrAttrs->uWordSize == 0) {
 		status = CHNL_E_INVALIDWORDSIZE;
+		GT_0trace(IO_DebugMask, GT_7CLASS,
+			 "IO_Create:Invalid Word size\n");
+	}
 
 	if (DSP_SUCCEEDED(status)) {
-		status = DEV_GetIntfFxns(hDevObject, &pIntfFxns);
+		DEV_GetIntfFxns(hDevObject, &pIntfFxns);
 
-		if (pIntfFxns) {
-			/* Let WMD channel module finish the create */
-			status = (*pIntfFxns->pfnIOCreate)(&hIOMgr, hDevObject,
-					pMgrAttrs);
-		}
+		/* Let WMD channel module finish the create: */
+		status = (*pIntfFxns->pfnIOCreate)(&hIOMgr, hDevObject,
+			 pMgrAttrs);
 
 		if (DSP_SUCCEEDED(status)) {
 			pIOMgr = (struct IO_MGR_ *) hIOMgr;
@@ -90,8 +119,15 @@ DSP_STATUS IO_Create(OUT struct IO_MGR **phIOMgr, struct DEV_OBJECT *hDevObject,
 
 			/* Return the new channel manager handle: */
 			*phIOMgr = hIOMgr;
+			GT_1trace(IO_DebugMask, GT_1CLASS,
+				 "IO_Create: Success hIOMgr: 0x%x\n",
+				 hIOMgr);
 		}
 	}
+
+	GT_2trace(IO_DebugMask, GT_ENTER,
+		 "Exiting IO_Create: hIOMgr: 0x%x, status:"
+		 " 0x%x\n", hIOMgr, status);
 
 	return status;
 }
@@ -109,11 +145,17 @@ DSP_STATUS IO_Destroy(struct IO_MGR *hIOMgr)
 
 	DBC_Require(cRefs > 0);
 
+	GT_1trace(IO_DebugMask, GT_ENTER, "Entered IO_Destroy: hIOMgr: 0x%x\n",
+		  hIOMgr);
+
 	pIntfFxns = pIOMgr->pIntfFxns;
 
 	/* Let WMD channel module destroy the IO_MGR: */
 	status = (*pIntfFxns->pfnIODestroy) (hIOMgr);
 
+	GT_2trace(IO_DebugMask, GT_ENTER,
+		 "Exiting IO_Destroy: pIOMgr: 0x%x, status:"
+		 " 0x%x\n", pIOMgr, status);
 	return status;
 }
 
@@ -127,6 +169,9 @@ void IO_Exit(void)
 	DBC_Require(cRefs > 0);
 
 	cRefs--;
+
+	GT_1trace(IO_DebugMask, GT_5CLASS,
+		 "Entered IO_Exit, ref count: 0x%x\n", cRefs);
 
 	DBC_Ensure(cRefs >= 0);
 }
@@ -149,6 +194,10 @@ bool IO_Init(void)
 
 	if (fRetval)
 		cRefs++;
+
+
+	GT_1trace(IO_DebugMask, GT_5CLASS,
+		 "Entered IO_Init, ref count: 0x%x\n", cRefs);
 
 	DBC_Ensure((fRetval && (cRefs > 0)) || (!fRetval && (cRefs >= 0)));
 

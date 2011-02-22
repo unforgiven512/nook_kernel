@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Provide registry support functions.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,20 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== regsup.c ========
+ *  Purpose:
+ *      Provide registry support functions.
+ *
+ *! Revision History:
+ *! ================
+ *! 28-May-2002  map: Integrated PSI's dspimage update mechanism
+ *! 11-May-2002  gp:  Turned PERF "on".
+ *! 21-May-2002  map: Fixed bug in SetValue - if resizing datasize, set
+ *!		      new size too
  */
 
 /*  ----------------------------------- Host OS */
@@ -30,20 +42,26 @@
 
 /*  ----------------------------------- OS Adaptation Layer */
 #include <dspbridge/mem.h>
-#include <dspbridge/list.h>
 
 /*  ----------------------------------- This */
 #include <regsup.h>
 
-struct RegValue {
-	struct list_head link;	/* Make it linked to a list */
-	char name[MAXREGPATHLENGTH];   /*  Name of a given value entry  */
+struct RegValueStruct {
+	char name[BRIDGE_MAX_NAME_SIZE];   /*  Name of a given value entry  */
 	u32 dataSize;		/*  Size of the data  */
 	void *pData;		/*  Pointer to the actual data  */
 };
 
+struct RegKeyStruct {
+	/*The current number of value entries this key has*/
+	u32 numValueEntries;
+	/* Array of value entries */
+	struct RegValueStruct values[BRIDGE_MAX_NUM_REG_ENTRIES];
+};
+
+
 /*  Pointer to the registry support key  */
-static struct LST_LIST regKey, *pRegKey = &regKey;
+static struct RegKeyStruct *pRegKey;
 
 #if GT_TRACE
 extern struct GT_Mask REG_debugMask;	/* GT trace var. */
@@ -56,7 +74,14 @@ extern struct GT_Mask REG_debugMask;	/* GT trace var. */
  */
 bool regsupInit(void)
 {
-	INIT_LIST_HEAD(&pRegKey->head);
+	if (pRegKey != NULL)
+		return true;
+
+	/*  Need to allocate and setup our registry.  */
+	pRegKey = MEM_Calloc(sizeof(struct RegKeyStruct), MEM_NONPAGED);
+	if (pRegKey == NULL)
+		return false;
+
 	return true;
 }
 
@@ -67,14 +92,40 @@ bool regsupInit(void)
  */
 void regsupExit(void)
 {
-	struct RegValue *rv;
-	/*  Now go through each entry and free all resources.  */
-	while (!LST_IsEmpty(pRegKey)) {
-		rv = (struct RegValue *) LST_GetHead(pRegKey);
+	u32 i;
 
-		kfree(rv->pData);
-		kfree(rv);
+	/*  Make sure data has actually been allocated.  */
+	if (pRegKey == NULL) {
+		/*  Nothing initialized.return!  */
+		return;
 	}
+
+	GT_1trace(REG_debugMask, GT_2CLASS, "pRegKey->numValueEntries %d\n",
+		  pRegKey->numValueEntries);
+
+	/*  Now go through each entry and free all resources.  */
+	for (i = 0; ((i < BRIDGE_MAX_NUM_REG_ENTRIES) &&
+	    (i < pRegKey->numValueEntries)); i++) {
+		if (pRegKey->values[i].name[0] != '\0') {
+			/*  We have a valid entry.free it up!  */
+			if (pRegKey->values[i].pData != NULL) {
+				GT_3trace(REG_debugMask, GT_2CLASS,
+					  "E %d\t %s DATA %x ", i,
+					  pRegKey->values[i].name,
+					  *(u32 *)pRegKey->values[i].pData);
+				MEM_Free(pRegKey->values[i].pData);
+			}
+			pRegKey->values[i].pData = NULL;
+			pRegKey->values[i].dataSize = 0;
+			pRegKey->values[i].name[0] = '\0';
+		}
+	}
+
+	/*  Now that all of the resources are freed up, free the main one!  */
+	MEM_Free(pRegKey);
+
+	/*  Don't forget to NULL out the global entry!  */
+	pRegKey = NULL;
 }
 
 /*
@@ -85,24 +136,25 @@ void regsupExit(void)
 DSP_STATUS regsupGetValue(char *valName, void *pBuf, u32 *dataSize)
 {
 	DSP_STATUS retVal = DSP_EFAIL;
-	struct RegValue *rv = (struct RegValue *) LST_First(pRegKey);
+	u32 i;
 
 	/*  Need to search through the entries looking for the right one.  */
-	while (rv) {
+	for (i = 0; i < pRegKey->numValueEntries; i++) {
 		/*  See if the name matches.  */
-		if (strncmp(rv->name, valName, MAXREGPATHLENGTH) == 0) {
+               if (strncmp(pRegKey->values[i].name, valName,
+		    BRIDGE_MAX_NAME_SIZE) == 0) {
+
 			/*  We have a match!  Copy out the data.  */
-			memcpy(pBuf, rv->pData, rv->dataSize);
+			memcpy(pBuf, pRegKey->values[i].pData,
+			       pRegKey->values[i].dataSize);
 
 			/*  Get the size for the caller.  */
-			*dataSize = rv->dataSize;
+			*dataSize = pRegKey->values[i].dataSize;
 
 			/*  Set our status to good and exit.  */
 			retVal = DSP_SOK;
 			break;
 		}
-		rv = (struct RegValue *) LST_Next(pRegKey,
-						(struct list_head *) rv);
 	}
 
 	if (DSP_SUCCEEDED(retVal)) {
@@ -123,58 +175,64 @@ DSP_STATUS regsupGetValue(char *valName, void *pBuf, u32 *dataSize)
 DSP_STATUS regsupSetValue(char *valName, void *pBuf, u32 dataSize)
 {
 	DSP_STATUS retVal = DSP_EFAIL;
-	struct RegValue *rv = (struct RegValue *) LST_First(pRegKey);
+	u32 i;
 
 	GT_2trace(REG_debugMask, GT_2CLASS, "S %s DATA %x ", valName,
 		  *(u32 *)pBuf);
 
 	/*  Need to search through the entries looking for the right one.  */
-	while (rv) {
+	for (i = 0; i < pRegKey->numValueEntries; i++) {
 		/*  See if the name matches.  */
-		if (strncmp(rv->name, valName, MAXREGPATHLENGTH) == 0) {
+               if (strncmp(pRegKey->values[i].name, valName,
+		    BRIDGE_MAX_NAME_SIZE) == 0) {
 			/*  Make sure the new data size is the same.  */
-			if (dataSize != rv->dataSize) {
+			if (dataSize != pRegKey->values[i].dataSize) {
 				/*  The caller needs a different data size!  */
-				kfree(rv->pData);
-				rv->pData = MEM_Alloc(dataSize, MEM_NONPAGED);
-				if (rv->pData == NULL)
+				MEM_Free(pRegKey->values[i].pData);
+				pRegKey->values[i].pData = MEM_Alloc(dataSize,
+							   MEM_NONPAGED);
+				if (pRegKey->values[i].pData == NULL)
 					break;
+
 			}
 
 			/*  We have a match!  Copy out the data.  */
-			memcpy(rv->pData, pBuf, dataSize);
+			memcpy(pRegKey->values[i].pData, pBuf, dataSize);
 
 			/* Reset datasize - overwrite if new or same */
-			rv->dataSize = dataSize;
+			pRegKey->values[i].dataSize = dataSize;
 
 			/*  Set our status to good and exit.  */
 			retVal = DSP_SOK;
 			break;
 		}
-	       rv = (struct RegValue *) LST_Next(pRegKey,
-					(struct list_head *) rv);
 	}
 
 	/*  See if we found a match or if this is a new entry  */
-	if (!rv) {
+	if (i == pRegKey->numValueEntries) {
 		/*  No match, need to make a new entry  */
-		struct RegValue *new = MEM_Calloc(sizeof(struct RegValue),
-						MEM_NONPAGED);
-
-		if (new) {
-			strncat(new->name, valName, MAXREGPATHLENGTH - 1);
-			new->pData = MEM_Alloc(dataSize, MEM_NONPAGED);
-			if (new->pData != NULL) {
-				memcpy(new->pData, pBuf, dataSize);
-				new->dataSize = dataSize;
-				LST_PutTail(pRegKey, (struct list_head *) new);
+		/*  First check to see if we can make any more entries.  */
+		if (pRegKey->numValueEntries < BRIDGE_MAX_NUM_REG_ENTRIES) {
+			char *tmp_name =
+				pRegKey->values[pRegKey->numValueEntries].name;
+			strncpy(tmp_name, valName, BRIDGE_MAX_NAME_SIZE - 1);
+			tmp_name[BRIDGE_MAX_NAME_SIZE - 1] = '\0';
+			pRegKey->values[pRegKey->numValueEntries].pData =
+					MEM_Alloc(dataSize, MEM_NONPAGED);
+			if (pRegKey->values[pRegKey->numValueEntries].pData !=
+									NULL) {
+				memcpy(pRegKey->
+					values[pRegKey->numValueEntries].pData,
+					pBuf, dataSize);
+				pRegKey->
+				    values[pRegKey->numValueEntries].dataSize =
+				    dataSize;
+				pRegKey->numValueEntries++;
 				retVal = DSP_SOK;
-			} else {
-				kfree(new);
-				retVal = DSP_EMEMORY;
 			}
 		} else {
-			retVal = DSP_EMEMORY;
+			GT_0trace(REG_debugMask, GT_7CLASS,
+				  "MAX NUM REG ENTRIES REACHED\n");
 		}
 	}
 
@@ -191,7 +249,7 @@ DSP_STATUS regsupEnumValue(IN u32 dwIndex, IN CONST char *pstrKey,
 			   IN OUT char *pstrData, IN OUT u32 *pdwDataSize)
 {
 	DSP_STATUS retVal = REG_E_INVALIDSUBKEY;
-	struct RegValue *rv = (struct RegValue *) LST_First(pRegKey);
+	u32 i;
        u32 dwKeyLen;
 	u32 count = 0;
 
@@ -199,16 +257,19 @@ DSP_STATUS regsupEnumValue(IN u32 dwIndex, IN CONST char *pstrKey,
        dwKeyLen = strlen(pstrKey);
 
 	/*  Need to search through the entries looking for the right one.  */
-	while (rv) {
+	for (i = 0; i < pRegKey->numValueEntries; i++) {
 		/*  See if the name matches.  */
-		if (strncmp(rv->name, pstrKey, dwKeyLen) == 0 &&
-			count++ == dwIndex) {
+               if ((strncmp(pRegKey->values[i].name, pstrKey,
+		    dwKeyLen) == 0) && count++ == dwIndex) {
 			/*  We have a match!  Copy out the data.  */
-			memcpy(pstrData, rv->pData, rv->dataSize);
+			memcpy(pstrData, pRegKey->values[i].pData,
+				pRegKey->values[i].dataSize);
 			/*  Get the size for the caller.  */
-			*pdwDataSize = rv->dataSize;
-			*pdwValueSize = strlen(&(rv->name[dwKeyLen]));
-			strncpy(pstrValue, &(rv->name[dwKeyLen]),
+			*pdwDataSize = pRegKey->values[i].dataSize;
+                       *pdwValueSize = strlen(&(pRegKey->
+						values[i].name[dwKeyLen]));
+                       strncpy(pstrValue,
+				    &(pRegKey->values[i].name[dwKeyLen]),
 				    *pdwValueSize + 1);
 			GT_3trace(REG_debugMask, GT_2CLASS,
 				  "E Key %s, Value %s, Data %x ",
@@ -217,8 +278,6 @@ DSP_STATUS regsupEnumValue(IN u32 dwIndex, IN CONST char *pstrKey,
 			retVal = DSP_SOK;
 			break;
 		}
-	       rv = (struct RegValue *) LST_Next(pRegKey,
-						(struct list_head *) rv);
 	}
 
 	if (count && DSP_FAILED(retVal))
@@ -233,27 +292,50 @@ DSP_STATUS regsupEnumValue(IN u32 dwIndex, IN CONST char *pstrKey,
 DSP_STATUS regsupDeleteValue(IN CONST char *pstrValue)
 {
 	DSP_STATUS retVal = DSP_EFAIL;
-	struct RegValue *rv = (struct RegValue *) LST_First(pRegKey);
+	u32 i;
 
-	while (rv) {
-		/*  See if the name matches.  */
-		if (strncmp(rv->name, pstrValue, MAXREGPATHLENGTH) == 0) {
+	for (i = 0; ((i < BRIDGE_MAX_NUM_REG_ENTRIES) &&
+	    (i < pRegKey->numValueEntries)); i++) {
+		/*  See if the name matches...  */
+               if (strncmp(pRegKey->values[i].name, pstrValue,
+		    BRIDGE_MAX_NAME_SIZE) == 0) {
 			/* We have a match!  Delete this key.  To delete a
 			 * key, we free all resources associated with this
 			 * key and, if we're not already the last entry in
 			 * the array, we copy that entry into this deleted
 			 * key.
 			 */
-			LST_RemoveElem(pRegKey, (struct list_head *)rv);
-			kfree(rv->pData);
-			kfree(rv);
+			MEM_Free(pRegKey->values[i].pData);
+			if ((pRegKey->numValueEntries - 1) == i) {
+				/* we're deleting the last one */
+				pRegKey->values[i].name[0] = '\0';
+				pRegKey->values[i].dataSize = 0;
+				pRegKey->values[i].pData = NULL;
+			} else {
+				/* move the last one here */
+                               strncpy(pRegKey->values[i].name, pRegKey->
+				    values[pRegKey->numValueEntries - 1].name,
+				    BRIDGE_MAX_NAME_SIZE);
+				pRegKey->values[i].dataSize =
+				    pRegKey->
+				    values[pRegKey->numValueEntries-1].dataSize;
+				pRegKey->values[i].pData =
+				    pRegKey->
+				    values[pRegKey->numValueEntries-1].pData;
+				/* don't have to do this, but for
+				 * the paranoid... */
+				pRegKey->
+				    values[pRegKey->numValueEntries-1].name[0] =
+				    '\0';
+			}
+
+			/* another one bites the dust. */
+			pRegKey->numValueEntries--;
 
 			/*  Set our status to good and exit...  */
 			retVal = DSP_SOK;
 			break;
 		}
-		rv = (struct RegValue *)LST_Next(pRegKey,
-				(struct list_head *)rv);
 	}
 	return retVal;
 

@@ -3,13 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * The Dynamic Memory Manager (DMM) module manages the DSP Virtual address
- * space that can be directly mapped to any MPU buffer or memory region
- *
- * Notes:
- *   Region: Generic memory entitiy having a start address and a size
- *   Chunk:  Reserved region
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -19,6 +12,46 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+/*
+ *  ======== dmm.c ========
+ *  Purpose:
+ *      The Dynamic Memory Manager (DMM) module manages the DSP Virtual address
+ *      space that can be directly mapped to any MPU buffer or memory region
+ *
+ *  Public Functions:
+ *      DMM_CreateTables
+ *      DMM_Create
+ *      DMM_Destroy
+ *      DMM_Exit
+ *      DMM_Init
+ *      DMM_MapMemory
+ *      DMM_Reset
+ *      DMM_ReserveMemory
+ *      DMM_UnMapMemory
+ *      DMM_UnReserveMemory
+ *
+ *  Private Functions:
+ *      AddRegion
+ *      CreateRegion
+ *      GetRegion
+ *	GetFreeRegion
+ *	GetMappedRegion
+ *
+ *  Notes:
+ *      Region: Generic memory entitiy having a start address and a size
+ *      Chunk:  Reserved region
+ *
+ *
+ *! Revision History:
+ *! ================
+ *! 04-Jun-2008 Hari K : Optimized DMM implementation. Removed linked list
+ *!                                and instead used Table approach.
+ *! 19-Apr-2004 sb: Integrated Alan's code review updates.
+ *! 17-Mar-2004 ap: Fixed GetRegion for size=0 using tighter bound.
+ *! 20-Feb-2004 sb: Created.
+ *!
  */
 
 /*  ----------------------------------- Host OS */
@@ -34,6 +67,7 @@
 #include <dspbridge/gt.h>
 
 /*  ----------------------------------- OS Adaptation Layer */
+#include <dspbridge/list.h>
 #include <dspbridge/mem.h>
 #include <dspbridge/sync.h>
 
@@ -102,6 +136,9 @@ DSP_STATUS DMM_CreateTables(struct DMM_OBJECT *hDmmMgr, u32 addr, u32 size)
 	struct DMM_OBJECT *pDmmObj = (struct DMM_OBJECT *)hDmmMgr;
 	DSP_STATUS status = DSP_SOK;
 
+	GT_3trace(DMM_debugMask, GT_ENTER,
+		 "Entered DMM_CreateTables () hDmmMgr %x, addr"
+		 " %x, size %x\n", hDmmMgr, addr, size);
 	status = DMM_DeleteTables(pDmmObj);
 	if (DSP_SUCCEEDED(status)) {
 		SYNC_EnterCS(pDmmObj->hDmmLock);
@@ -120,11 +157,13 @@ DSP_STATUS DMM_CreateTables(struct DMM_OBJECT *hDmmMgr, u32 addr, u32 size)
 			pVirtualMappingTable[0].RegionSize = TableSize;
 		}
 		SYNC_LeaveCS(pDmmObj->hDmmLock);
-	}
+	} else
+		GT_0trace(DMM_debugMask, GT_7CLASS,
+			 "DMM_CreateTables: DMM_DeleteTables"
+			 "Failure\n");
 
-	if (DSP_FAILED(status))
-		pr_err("%s: failure, status 0x%x\n", __func__, status);
-
+	GT_1trace(DMM_debugMask, GT_4CLASS, "Leaving DMM_CreateTables status"
+							"0x%x\n", status);
 	return status;
 }
 
@@ -142,6 +181,9 @@ DSP_STATUS DMM_Create(OUT struct DMM_OBJECT **phDmmMgr,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phDmmMgr != NULL);
 
+	GT_3trace(DMM_debugMask, GT_ENTER,
+		 "DMM_Create: phDmmMgr: 0x%x hDevObject: "
+		 "0x%x pMgrAttrs: 0x%x\n", phDmmMgr, hDevObject, pMgrAttrs);
 	*phDmmMgr = NULL;
 	/* create, zero, and tag a cmm mgr object */
 	MEM_AllocObject(pDmmObject, struct DMM_OBJECT, DMMSIGNATURE);
@@ -152,8 +194,14 @@ DSP_STATUS DMM_Create(OUT struct DMM_OBJECT **phDmmMgr,
 		else
 			DMM_Destroy(pDmmObject);
 	} else {
+		GT_0trace(DMM_debugMask, GT_7CLASS,
+			 "DMM_Create: Object Allocation "
+			 "Failure(DMM Object)\n");
 		status = DSP_EMEMORY;
 	}
+	GT_2trace(DMM_debugMask, GT_4CLASS,
+			"Leaving DMM_Create status %x pDmmObject %x\n",
+			status, pDmmObject);
 
 	return status;
 }
@@ -168,6 +216,8 @@ DSP_STATUS DMM_Destroy(struct DMM_OBJECT *hDmmMgr)
 	struct DMM_OBJECT *pDmmObj = (struct DMM_OBJECT *)hDmmMgr;
 	DSP_STATUS status = DSP_SOK;
 
+	GT_1trace(DMM_debugMask, GT_ENTER,
+		"Entered DMM_Destroy () hDmmMgr %x\n", hDmmMgr);
 	DBC_Require(cRefs > 0);
 	if (MEM_IsValidHandle(hDmmMgr, DMMSIGNATURE)) {
 		status = DMM_DeleteTables(pDmmObj);
@@ -175,10 +225,14 @@ DSP_STATUS DMM_Destroy(struct DMM_OBJECT *hDmmMgr)
 			/* Delete CS & dmm mgr object */
 			SYNC_DeleteCS(pDmmObj->hDmmLock);
 			MEM_FreeObject(pDmmObj);
-		}
+		} else
+			GT_0trace(DMM_debugMask, GT_7CLASS,
+			 "DMM_Destroy: DMM_DeleteTables "
+			 "Failure\n");
 	} else
 		status = DSP_EHANDLE;
-
+	GT_1trace(DMM_debugMask, GT_4CLASS, "Leaving DMM_Destroy status %x\n",
+								status);
 	return status;
 }
 
@@ -193,16 +247,21 @@ DSP_STATUS DMM_DeleteTables(struct DMM_OBJECT *hDmmMgr)
 	struct DMM_OBJECT *pDmmObj = (struct DMM_OBJECT *)hDmmMgr;
 	DSP_STATUS status = DSP_SOK;
 
+	GT_1trace(DMM_debugMask, GT_ENTER,
+		"Entered DMM_DeleteTables () hDmmMgr %x\n", hDmmMgr);
 	DBC_Require(cRefs > 0);
 	if (MEM_IsValidHandle(hDmmMgr, DMMSIGNATURE)) {
 		/* Delete all DMM tables */
 		SYNC_EnterCS(pDmmObj->hDmmLock);
 
-		vfree(pVirtualMappingTable);
+		if (pVirtualMappingTable != NULL)
+			MEM_VFree(pVirtualMappingTable);
 
 		SYNC_LeaveCS(pDmmObj->hDmmLock);
 	} else
 		status = DSP_EHANDLE;
+	GT_1trace(DMM_debugMask, GT_4CLASS,
+		"Leaving DMM_DeleteTables status %x\n", status);
 	return status;
 }
 
@@ -220,6 +279,9 @@ void DMM_Exit(void)
 	DBC_Require(cRefs > 0);
 
 	cRefs--;
+
+	GT_1trace(DMM_debugMask, GT_ENTER,
+		 "exiting DMM_Exit, ref count:0x%x\n", cRefs);
 }
 
 /*
@@ -228,12 +290,15 @@ void DMM_Exit(void)
  *      Return the dynamic memory manager object for this device.
  *      This is typically called from the client process.
  */
-DSP_STATUS DMM_GetHandle(void *hProcessor,
+DSP_STATUS DMM_GetHandle(DSP_HPROCESSOR hProcessor,
 			OUT struct DMM_OBJECT **phDmmMgr)
 {
 	DSP_STATUS status = DSP_SOK;
 	struct DEV_OBJECT *hDevObject;
 
+	GT_2trace(DMM_debugMask, GT_ENTER,
+		 "DMM_GetHandle: hProcessor %x, phDmmMgr"
+		 "%x\n", hProcessor, phDmmMgr);
 	DBC_Require(cRefs > 0);
 	DBC_Require(phDmmMgr != NULL);
 	if (hProcessor != NULL)
@@ -244,6 +309,8 @@ DSP_STATUS DMM_GetHandle(void *hProcessor,
 	if (DSP_SUCCEEDED(status))
 		status = DEV_GetDmmMgr(hDevObject, phDmmMgr);
 
+	GT_2trace(DMM_debugMask, GT_4CLASS, "Leaving DMM_GetHandle status %x, "
+		 "*phDmmMgr %x\n", status, phDmmMgr ? *phDmmMgr : NULL);
 	return status;
 }
 
@@ -266,6 +333,9 @@ bool DMM_Init(void)
 
 	if (fRetval)
 		cRefs++;
+
+	GT_1trace(DMM_debugMask, GT_ENTER,
+		 "Entered DMM_Init, ref count:0x%x\n", cRefs);
 
 	DBC_Ensure((fRetval && (cRefs > 0)) || (!fRetval && (cRefs >= 0)));
 
@@ -458,6 +528,9 @@ static struct MapPage *GetRegion(u32 aAddr)
 	struct MapPage *currRegion = NULL;
 	u32   i = 0;
 
+	GT_1trace(DMM_debugMask, GT_ENTER, "Entered GetRegion () "
+		" aAddr %x\n", aAddr);
+
 	if (pVirtualMappingTable != NULL) {
 		/* find page mapped by this address */
 		i = DMM_ADDR_TO_INDEX(aAddr);
@@ -481,6 +554,8 @@ static struct MapPage *GetFreeRegion(u32 aSize)
 	u32   i = 0;
 	u32   RegionSize = 0;
 	u32   nextI = 0;
+	GT_1trace(DMM_debugMask, GT_ENTER, "Entered GetFreeRegion () "
+		"aSize 0x%x\n", aSize);
 
 	if (pVirtualMappingTable == NULL)
 		return currRegion;
@@ -525,6 +600,8 @@ static struct MapPage *GetMappedRegion(u32 aAddr)
 {
 	u32   i = 0;
 	struct MapPage *currRegion = NULL;
+	GT_1trace(DMM_debugMask, GT_ENTER, "Entered GetMappedRegion () "
+						"aAddr 0x%x\n", aAddr);
 
 	if (pVirtualMappingTable == NULL)
 		return currRegion;

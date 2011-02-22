@@ -14,6 +14,16 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+
+/*
+ *  ======== windows.h ========
+ *
+ *! Revision History
+ *! ================
+ *! 08-Mar-2004 sb Added cacheflush.h to support Dynamic Memory Mapping feature
+ *! 16-Feb-2004 sb Added headers required for consistent_alloc
+ */
+
 #ifndef _HOST_OS_H_
 #define _HOST_OS_H_
 
@@ -46,31 +56,22 @@
 #include <dspbridge/dbtype.h>
 #include <mach/clock.h>
 #include <linux/clk.h>
-#include <mach/mailbox.h>
 #include <linux/pagemap.h>
 #include <asm/cacheflush.h>
 #include <linux/dma-mapping.h>
 
 /* TODO -- Remove, once BP defines them */
+#define INT_MAIL_MPU_IRQ        26
 #define INT_DSP_MMU_IRQ        28
 
-struct dsp_shm_freq_table {
-	unsigned long u_volts;
-	unsigned long dsp_freq;
-	unsigned long thresh_min_freq;
-	unsigned long thresh_max_freq;
-};
-
 struct dspbridge_platform_data {
-	void 	(*dsp_set_min_opp)(struct device *dev, unsigned long f);
+	void 	(*dsp_set_min_opp)(u8 opp_id);
 	u8 	(*dsp_get_opp)(void);
 	void 	(*cpu_set_freq)(unsigned long f);
 	unsigned long (*cpu_get_freq)(void);
 	struct omap_opp *(*dsp_get_rate_table)(void);
-	unsigned long mpu_min_speed;
-	unsigned long mpu_max_speed;
-	struct dsp_shm_freq_table *dsp_freq_table;
-	u8 dsp_num_speeds;
+	struct omap_opp *(*mpu_get_rate_table)(void);
+	struct omap_opp *mpu_rate_table;
 
 	u32 phys_mempool_base;
 	u32 phys_mempool_size;

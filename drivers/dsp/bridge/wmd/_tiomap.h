@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Definitions and types private to this WMD.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,11 +14,19 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+/*
+ *  ======== _tiomap.h ========
+ *  Description:
+ *      Definitions and types private to this WMD.
+ *
+ */
+
 #ifndef _TIOMAP_
 #define _TIOMAP_
 
 #include <dspbridge/devdefs.h>
 #include <hw_defs.h>
+#include <hw_mbox.h>
 #include <dspbridge/wmdioctl.h>		/* for WMDIOCTL_EXTPROC defn */
 #include <dspbridge/sync.h>
 #include <dspbridge/clk.h>
@@ -208,8 +214,12 @@ static const struct MAP_L4PERIPHERAL L4PeripheralTable[] = {
 #define MBX_PM_MAX_RESOURCES 11
 
 /*  Power Management Commands */
-#define BPWR_DisableClock	0
-#define BPWR_EnableClock	1
+enum BPWR_ExtClockCmd {
+	BPWR_DisableClock = 0,
+	BPWR_EnableClock,
+	BPWR_DisableAutoIdle,
+	BPWR_EnableAutoIdle
+} ;
 
 /* OMAP242x specific resources */
 enum BPWR_ExtClockId {
@@ -265,6 +275,21 @@ static const struct BPWR_Clk_t BPWR_Clks[] = {
 #define INTH_MASK_IT_REG_OFFSET         0x04	/* Mask Interrupt reg offset  */
 
 #define   DSP_MAILBOX1_INT              10
+
+/*
+ *  INTH_InterruptKind_t
+ *  Identify the kind of interrupt: either FIQ/IRQ
+ */
+enum INTH_InterruptKind_t {
+	INTH_IRQ = 0,
+	INTH_FIQ = 1
+} ;
+
+enum INTH_SensitiveEdge_t {
+	FALLING_EDGE_SENSITIVE = 0,
+	LOW_LEVEL_SENSITIVE = 1
+} ;
+
 /*
  *  Bit definition of  Interrupt  Level  Registers
  */
@@ -285,11 +310,6 @@ static const struct BPWR_Clk_t BPWR_Clks[] = {
 #define MBOX_ARM HW_MBOX_U0_ARM
 #define MBOX_DSP HW_MBOX_U1_DSP1
 
-/* WDT defines */
-#define WDT_SYSCONFIG_OFFSET	0x10
-#define WDT_ISR_OFFSET		0x18
-#define WDT_IER_OFFSET		0x1C
-
 #define ENABLE                          true
 #define DISABLE                         false
 
@@ -302,9 +322,9 @@ static const struct BPWR_Clk_t BPWR_Clks[] = {
 #define ClearBit(reg, mask)             (reg &= ~mask)
 #define SetBit(reg, mask)               (reg |= mask)
 
-#define SetGroupBits16(reg, position, width, value)			     \
-	do {								     \
-		reg &= ~((0xFFFF >> (16 - (width))) << (position));	     \
+#define SetGroupBits16(reg, position, width, value) \
+	do {\
+		reg &= ~((0xFFFF >> (16 - (width))) << (position)) ; \
 		reg |= ((value & (0xFFFF >> (16 - (width)))) << (position)); \
 	} while (0);
 
@@ -313,30 +333,28 @@ static const struct BPWR_Clk_t BPWR_Clks[] = {
 /* This mini driver's device context: */
 struct WMD_DEV_CONTEXT {
 	struct DEV_OBJECT *hDevObject;	/* Handle to WCD device object. */
-	u32 dwDspBaseAddr; 		/* Arm's API to DSP virt base addr */
+	u32 dwDspBaseAddr;	/* Arm's API to DSP virtual base addr */
 	/*
 	 * DSP External memory prog address as seen virtually by the OS on
 	 * the host side.
 	 */
-	u32 dwDspExtBaseAddr;		/* See the comment above */
-	u32 dwAPIRegBase;		/* API mem map'd registers */
-	void __iomem *dwDSPMmuBase;	/* DSP MMU Mapped registers */
-	void __iomem *cmbase;		/* CM mapped registers */
-	void __iomem *sysctrlbase;	/* SysCtrl mapped registers */
-	void __iomem *prmbase;		/* PRM mapped registers	*/
-	void __iomem *perbase;		/* PER mapped registers	*/
-	void __iomem *wdt3_base;		/* WDT3 mapped registers */
-	u32 dwAPIClkBase;		/* CLK Registers */
-	u32 dwDSPClkM2Base;		/* DSP Clock Module m2 */
-	u32 dwPublicRhea;		/* Pub Rhea */
-	u32 dwIntAddr;			/* MB INTR reg */
-	u32 dwTCEndianism;		/* TC Endianism register */
-	u32 dwTestBase;			/* DSP MMU Mapped registers */
-	u32 dwSelfLoop;			/* Pointer to the selfloop */
-	u32 dwDSPStartAdd;		/* API Boot vector */
-	u32 dwInternalSize;		/* Internal memory size */
-
-	struct omap_mbox *mbox;		/* Mail box handle*/
+	u32 dwDspExtBaseAddr;	/* See the comment above        */
+	u32 dwAPIRegBase;	/* API memory mapped registers  */
+	void __iomem *dwDSPMmuBase;	/* DSP MMU Mapped registers	*/
+	void __iomem *dwMailBoxBase;	/* Mail box mapped registers	*/
+	void __iomem *cmbase;			/* CM mapped registers		*/
+	void __iomem *sysctrlbase;		/* SysCtrl mapped registers		*/
+	void __iomem *prmbase;			/* PRM mapped registers		*/
+	void __iomem *perbase;			/* PER mapped registers		*/
+	u32 dwAPIClkBase;	/* CLK Registers                */
+	u32 dwDSPClkM2Base;	/* DSP Clock Module m2          */
+	u32 dwPublicRhea;	/* Pub Rhea                     */
+	u32 dwIntAddr;	/* MB INTR reg                  */
+	u32 dwTCEndianism;	/* TC Endianism register        */
+	u32 dwTestBase;	/* DSP MMU Mapped registers     */
+	u32 dwSelfLoop;	/* Pointer to the selfloop      */
+	u32 dwDSPStartAdd;	/* API Boot vector              */
+	u32 dwInternalSize;	/* Internal memory size         */
 
 	/*
 	 * Processor specific info is set when prog loaded and read from DCD.
@@ -344,14 +362,14 @@ struct WMD_DEV_CONTEXT {
 	 */
 	/* DMMU TLB entries */
 	struct WMDIOCTL_EXTPROC aTLBEntry[WMDIOCTL_NUMOFMMUTLB];
-	u32 dwBrdState;			/* Last known board state. */
-	u32 ulIntMask;			/* int mask */
-	u16 ioBase;			/* Board I/O base */
-	u32 numTLBEntries;		/* DSP MMU TLB entry counter */
-	u32 fixedTLBEntries;		/* Fixed DSPMMU TLB entry count */
+	u32 dwBrdState;	/* Last known board state.      */
+	u32 ulIntMask;	/* int mask                     */
+	u16 ioBase;	/* Board I/O base               */
+	u32 numTLBEntries;	/* DSP MMU TLB entry counter    */
+	u32 fixedTLBEntries;	/* Fixed DSPMMU TLB entry count */
 
 	/* TC Settings */
-	bool tcWordSwapOn;		/* Traffic Controller Word Swap */
+	bool tcWordSwapOn;	/* Traffic Controller Word Swap */
 	struct PgTableAttrs *pPtAttrs;
 	u32 uDspPerClks;
 } ;
@@ -365,24 +383,6 @@ extern DSP_STATUS WMD_TLB_DspVAToMpuPA(struct WMD_DEV_CONTEXT *pDevContext,
 				       IN u32 ulVirtAddr,
 				       OUT u32 *ulPhysAddr,
 				       OUT u32 *sizeTlb);
-
-/*
- *  ======== sm_interrupt_dsp ========
- *  Purpose:
- *      Set interrupt value & send an interrupt to the DSP processor(s).
- *      This is typicaly used when mailbox interrupt mechanisms allow data
- *      to be associated with interrupt such as for OMAP's CMD/DATA regs.
- *  Parameters:
- *      hDevContext:    Handle to mini-driver defined device info.
- *      wMbVal:         Value associated with interrupt(e.g. mailbox value).
- *  Returns:
- *      DSP_SOK:        Interrupt sent;
- *      else:           Unable to send interrupt.
- *  Requires:
- *  Ensures:
- */
-       extern DSP_STATUS sm_interrupt_dsp(struct WMD_DEV_CONTEXT*
-						     hDevContext, u16 wMbVal);
 
 #endif				/* _TIOMAP_ */
 

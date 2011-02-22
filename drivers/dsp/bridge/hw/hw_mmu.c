@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * API definitions to setup MMU TLB and PTE
- *
  * Copyright (C) 2007 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,21 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+/*
+ *  ======== hw_mmu.c ========
+ *  Description:
+ *      API definitions to setup MMU TLB and PTE
+ *
+ *! Revision History:
+ *! ================
+ *! 19-Apr-2004 sb  TLBAdd and TLBFlush input the page size in bytes instead
+		    of an enum. TLBAdd inputs mapping attributes struct instead
+		    of individual arguments.
+		    Removed MMU.h and other cosmetic updates.
+ *! 08-Mar-2004 sb  Added the Page Table Management APIs
+ *! 16 Feb 2003 sb: Initial version
  */
 
 #include <GlobalTypes.h>
@@ -337,7 +350,8 @@ HW_STATUS HW_MMU_TLBAdd(const void __iomem *baseAddress,
 			   u32	      pageSize,
 			   u32	      entryNum,
 			   struct HW_MMUMapAttrs_t    *mapAttrs,
-			   s8 preservedBit, s8 validBit)
+			   enum HW_SetClear_t       preservedBit,
+			   enum HW_SetClear_t       validBit)
 {
     HW_STATUS  status = RET_OK;
     u32 lockReg;

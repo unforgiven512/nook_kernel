@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Global definitions and constants for DSP/BIOS Bridge.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,14 +14,65 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+/*
+ *  ======== dbdefs.h ========
+ *  Description:
+ *      Global definitions and constants for DSP/BIOS Bridge.
+ *
+ *! Revision History:
+ *! ================
+ *! 19-Apr-2004 sb  Aligned DMM definitions with Symbian
+ *! 08-Mar-2004 sb  Added MAPATTR & ELEM_SIZE for Dynamic Memory Mapping feature
+ *! 09-Feb-2004 vp  Added processor ID numbers for DSP and IVA
+ *! 06-Feb-2003 kc  Removed DSP_POSTMESSAGE. Updated IsValid*Event macros.
+ *! 22-Nov-2002 gp  Cleaned up comments, formatting.
+ *!                 Removed unused DSP_ENUMLASTNODE define.
+ *! 13-Feb-2002 jeh Added uSysStackSize to DSP_NDBPROPS.
+ *! 23-Jan-2002 ag  Added #define DSP_SHMSEG0.
+ *! 12-Dec-2001 ag  Added DSP_ESTRMMODE error code.
+ *! 04-Dec-2001 jeh Added DSP_ENOTCONNECTED error code.
+ *! 10-Dec-2001 kc: Modified macros and definitions to disable DSP_POSTMESSAGE.
+ *! 01-Nov-2001 jeh Added DSP_EOVERLAYMEMORY.
+ *! 18-Oct-2001 ag  Added DSP_STRMMODE type.
+ *!                 Added DSP_ENOTSHAREDMEM.
+ *! 21-Sep-2001 ag  Added additional error codes.
+ *! 07-Jun-2001 sg  Made DSPStream_AllocateBuffer fxn name plural.
+ *! 11-May-2001 jeh Changed DSP_NODE_MIN_PRIORITY from 0 to 1. Removed hNode
+ *!                 from DSP_NODEINFO.
+ *! 02-Apr-2001 sg  Added missing error codes, rearranged codes, switched to
+ *!             hex offsets, renamed some codes to match API spec.
+ *! 16-Jan-2001 jeh Added DSP_ESYMBOL, DSP_EUUID.
+ *! 13-Feb-2001 kc: DSP/BIOS Bridge name updates.
+ *! 05-Dec-2000 ag: Added DSP_RMSxxx user available message command codes.
+ *! 09-Nov-2000 rr: Added DSP_PROCEESORRESTART define; Removed DSP_PBUFFER.
+ *!                 Added DSP_DCD_ENOAUTOREGISTER, DSP_EUSER1-16, DSP_ESTRMFUL
+ *!                 Removed DSP_EDONE. Macros's modified.
+ *! 23-Oct-2000 jeh Replaced DSP_STREAMSTATECHANGE with DSP_STREAMDONE.
+ *! 09-Oct-2000 jeh Updated to version 0.9 DSP Bridge API spec.
+ *! 29-Sep-2000 kc  Added error codes for DCD and REG to simplify use of
+ *!                 these codes within the RM module.
+ *! 27-Sep-2000 jeh Added segid, alignment, uNumBufs to DSP_STREAMATTRIN.
+ *! 29-Aug-2000 jeh Added DSP_NODETYPE enum, changed DSP_EALREADYATTACHED to
+ *!                 DSP_EALREADYCONNECTED. Changed scStreamConnection[1]
+ *!                 to scStreamConnection[16] in DSP_NODEINFO structure.
+ *!                 Added DSP_NOTIFICATION, DSP_STRMATTR. PSTRING changed
+ *!                 back to TCHAR * and moved to dbtype.h.
+ *! 11-Aug-2000 rr: Macros to check valid events and notify masks added.
+ *! 09-Aug-2000 rr: Changed PSTRING to *s8
+ *! 07-Aug-2000 rr: PROC_IDLE/SYNCINIT/UNKNOWN state removed.
+ *! 20-Jul-2000 rr: Updated to version 0.8
+ *! 17-Jul-2000 rr: New PROC states added to the DSP_PROCSTATE.
+ *! 27-Jun-2000 rr: Created from dspapi.h
+ */
+
 #ifndef DBDEFS_
 #define DBDEFS_
 
 #include <linux/types.h>
 
-#include <dspbridge/dbtype.h>		/* GPP side type definitions */
-#include <dspbridge/std.h>		/* DSP/BIOS type definitions */
-#include <dspbridge/rms_sh.h>		/* Types shared between GPP and DSP */
+#include <dspbridge/dbtype.h>		/* GPP side type definitions           */
+#include <dspbridge/std.h>		/* DSP/BIOS type definitions           */
+#include <dspbridge/rms_sh.h>		/* Types shared between GPP and DSP    */
 
 #define PG_SIZE_4K 4096
 #define PG_MASK(pg_size) (~((pg_size)-1))
@@ -53,7 +102,6 @@
 #define DSP_SYSERROR                0x00000020
 #define DSP_EXCEPTIONABORT          0x00000300
 #define DSP_PWRERROR                0x00000080
-#define DSP_WDTOVERFLOW	0x00000040
 
 /* IVA exception events (IVA MMU fault) */
 #define IVA_MMUFAULT                0x00000040
@@ -107,36 +155,38 @@
 
 #define    MAX_PROFILES     16
 
-/* DSP chip type */
-#define DSPTYPE_64	0x99
-
 /* Types defined for 'Bridge API */
 	typedef u32 DSP_STATUS;	/* API return code type         */
 
+	typedef HANDLE DSP_HNODE;	/* Handle to a DSP Node object  */
+	typedef HANDLE DSP_HPROCESSOR;	/* Handle to a Processor object */
+	typedef HANDLE DSP_HSTREAM;	/* Handle to a Stream object    */
+
+	typedef u32 DSP_PROCFAMILY;	/* Processor family             */
+	typedef u32 DSP_PROCTYPE;	/* Processor type (w/in family) */
+	typedef u32 DSP_RTOSTYPE;	/* Type of DSP RTOS             */
 
 /* Handy Macros */
 #define IsValidProcEvent(x) (((x) == 0) || (((x) & (DSP_PROCESSORSTATECHANGE | \
-				DSP_PROCESSORATTACH | \
-				DSP_PROCESSORDETACH | \
-				DSP_PROCESSORRESTART | \
-				DSP_NODESTATECHANGE | \
-				DSP_STREAMDONE | \
-				DSP_STREAMIOCOMPLETION | \
-				DSP_MMUFAULT | \
-				DSP_SYSERROR | \
-				DSP_PWRERROR | \
-				DSP_WDTOVERFLOW)) && \
+				    DSP_PROCESSORATTACH | \
+				    DSP_PROCESSORDETACH | \
+				    DSP_PROCESSORRESTART | \
+				    DSP_NODESTATECHANGE | \
+				    DSP_STREAMDONE | \
+				    DSP_STREAMIOCOMPLETION | \
+				    DSP_MMUFAULT | \
+				    DSP_SYSERROR | \
+				    DSP_PWRERROR)) && \
 				!((x) & ~(DSP_PROCESSORSTATECHANGE | \
-				DSP_PROCESSORATTACH | \
-				DSP_PROCESSORDETACH | \
-				DSP_PROCESSORRESTART | \
-				DSP_NODESTATECHANGE | \
-				DSP_STREAMDONE | \
-				DSP_STREAMIOCOMPLETION | \
-				DSP_MMUFAULT | \
-				DSP_SYSERROR | \
-				DSP_PWRERROR | \
-				DSP_WDTOVERFLOW))))
+				    DSP_PROCESSORATTACH | \
+				    DSP_PROCESSORDETACH | \
+				    DSP_PROCESSORRESTART | \
+				    DSP_NODESTATECHANGE | \
+				    DSP_STREAMDONE | \
+				    DSP_STREAMIOCOMPLETION | \
+				    DSP_MMUFAULT | \
+				    DSP_SYSERROR | \
+				    DSP_PWRERROR))))
 
 #define IsValidNodeEvent(x)    (((x) == 0) || (((x) & (DSP_NODESTATECHANGE | \
 				DSP_NODEMESSAGEREADY)) && \
@@ -167,9 +217,7 @@
 		DSP_DCDLIBRARYTYPE,
 		DSP_DCDCREATELIBTYPE,
 		DSP_DCDEXECUTELIBTYPE,
-		DSP_DCDDELETELIBTYPE,
-		/* DSP_DCDMAXOBJTYPE is meant to be the last DCD object type */
-		DSP_DCDMAXOBJTYPE
+		DSP_DCDDELETELIBTYPE
 	} ;
 
 /* Processor states */
@@ -324,7 +372,7 @@
 		u32 cbStruct;
 		enum DSP_CONNECTTYPE lType;
 		u32 uThisNodeStreamIndex;
-		void *hConnectedNode;
+		DSP_HNODE hConnectedNode;
 		struct DSP_UUID uiConnectedNodeID;
 		u32 uConnectedNodeStreamIndex;
 	} ;
@@ -374,7 +422,7 @@
 		struct DSP_NDBPROPS nbNodeDatabaseProps;
 		u32 uExecutionPriority;
 		enum NODE_STATE nsExecutionState;
-		void *hDeviceOwner;
+		DSP_HNODE hDeviceOwner;
 		u32 uNumberStreams;
 		struct DSP_STREAMCONNECT scStreamConnection[16];
 		u32 uNodeEnv;
@@ -403,19 +451,26 @@
 		u32 cbStruct;
 		u32 uTimeout;
 	} ;
+
+	enum chipTypes {
+		DSPTYPE_55 = 6,
+		IVA_ARM7 = 0x97,
+		DSPTYPE_64 = 0x99
+	};
+
 /*
  * The DSP_PROCESSORINFO structure describes basic capabilities of a
  * DSP processor
  */
 	struct DSP_PROCESSORINFO {
 		u32 cbStruct;
-		int uProcessorFamily;
-		int uProcessorType;
+		DSP_PROCFAMILY uProcessorFamily;
+		DSP_PROCTYPE uProcessorType;
 		u32 uClockRate;
 		u32 ulInternalMemSize;
 		u32 ulExternalMemSize;
 		u32 uProcessorID;
-		int tyRunningRTOS;
+		DSP_RTOSTYPE tyRunningRTOS;
 		s32 nNodeMinPriority;
 		s32 nNodeMaxPriority;
 	} ;
@@ -494,9 +549,6 @@ bit 3 - MMU element size = 8bit (valid only for non mixed page entries)
 bit 4 - MMU element size = 16bit (valid only for non mixed page entries)
 bit 5 - MMU element size = 32bit (valid only for non mixed page entries)
 bit 6 - MMU element size = 64bit (valid only for non mixed page entries)
-
-bit 14 - Input (read only) buffer
-bit 15 - Output (writeable) buffer
 */
 
 /* Types of mapping attributes */
@@ -525,8 +577,6 @@ bit 15 - Output (writeable) buffer
 
 #define DSP_MAPDONOTLOCK	   0x00000100
 
-#define DSP_MAP_DIR_MASK		0x3FFF
-
 #define GEM_CACHE_LINE_SIZE     128
 #define GEM_L1P_PREFETCH_SIZE   128
 
@@ -552,7 +602,7 @@ bit 15 - Output (writeable) buffer
 #define AUTOSTART	"AutoStart"		/* Statically load flag */
 #define CURRENTCONFIG	"CurrentConfig"		/* Current resources */
 #define SHMSIZE		"SHMSize"		/* Size of SHM reservd on MPU */
-#define TCWORDSWAP	"TCWordSwap"		/* Traffic Controller WordSwp */
+#define TCWORDSWAP	"TCWordSwap"		/* Traffic Contoller Word Swap */
 #define DSPRESOURCES	"DspTMSResources"	/* C55 DSP resurces on OMAP */
 
 #endif				/* DBDEFS_ */

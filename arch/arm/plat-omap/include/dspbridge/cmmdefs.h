@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Global MEM constants and types.
- *
  * Copyright (C) 2008 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,24 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== cmmdefs.h ========
+ *  Purpose:
+ *      Global MEM constants and types.
+ *
+ *! Revision History:
+ *! ================
+ *! 12-Nov-2001 ag  CMM_KERNMAPTYPE added for dsp<->device process addr map'n.
+ *!                 This allows addr conversion from drvr process <-> DSP addr.
+ *! 29-Aug-2001 ag  Added CMM_ALLSEGMENTS.
+ *! 08-Dec-2000 ag  Added bus address conversion type CMM_POMAPEMIF2DSPBUS.
+ *! 05-Dec-2000 ag  Added default CMM_DEFLTCONVFACTOR & CMM_DEFLTDSPADDROFFSET.
+ *! 29-Oct-2000 ag  Added converstion factor for GPP DSP Pa translation.
+ *! 15-Oct-2000 ag  Added address translator attributes and defaults.
+ *! 12-Jul-2000 ag  Created.
  */
 
 #ifndef CMMDEFS_
@@ -39,9 +55,15 @@
  *  For typical platforms:
  *      converted Address = PaDSP + ( cFactor * addressToConvert).
  */
-#define CMM_SUBFROMDSPPA	-1
-#define CMM_ADDTODSPPA		1
+	enum CMM_CNVTTYPE {
+		CMM_SUBFROMDSPPA = -1,
+		/* PreOMAP is special case: not simple offset */
+		CMM_POMAPEMIF2DSPBUS = 0,
+		CMM_ADDTODSPPA = 1
+	} ;
 
+#define CMM_DEFLTDSPADDROFFSET  0
+#define CMM_DEFLTCONVFACTOR     CMM_POMAPEMIF2DSPBUS /* PreOMAP DSPBUS<->EMIF */
 #define CMM_ALLSEGMENTS         0xFFFFFF	/* All SegIds */
 #define CMM_MAXGPPSEGS          1	/* Maximum # of SM segs */
 
@@ -97,6 +119,14 @@
 		CMM_VA2DSPPA = 2,	/* Va to DSP Pa  */
 		CMM_PA2DSPPA = 3,	/* GPP Pa to DSP Pa */
 		CMM_DSPPA2PA = 4,	/* DSP Pa to GPP Pa */
+	} ;
+
+/*
+ *  Used to "map" between device process virt addr and dsp addr.
+ */
+	enum CMM_KERNMAPTYPE {
+		CMM_KERNVA2DSP = 0, /* Device process context to dsp address. */
+		CMM_DSP2KERNVA = 1, /* Dsp address to device process context. */
 	} ;
 
 	struct CMM_OBJECT;

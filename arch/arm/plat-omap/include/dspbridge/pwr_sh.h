@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Power Manager shared definitions (used on both GPP and DSP sides).
- *
  * Copyright (C) 2008 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,16 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+/*
+ *  ======== pwr_sh.h ========
+ *
+ *  Power Manager shared definitions (used on both GPP and DSP sides).
+ *
+ *! Revision History
+ *! ================
+ *! 17-Apr-2002 sg: Initial.
  */
 
 #ifndef PWR_SH_

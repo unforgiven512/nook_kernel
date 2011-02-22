@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * General storage memory allocator services.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,21 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== gs.c ========
+ *  Description:
+ *      General storage memory allocator services.
+ *
+ *! Revision History
+ *! ================
+ *! 29-Sep-1999 ag:  Un-commented MEM_Init in GS_init().
+ *! 14-May-1997 mg:  Modified to use new GS API for GS_free() and GS_frees().
+ *! 06-Nov-1996 gp:  Re-commented MEM_Init in GS_init(). GS needs GS_Exit().
+ *! 21-Oct-1996 db:  Un-commented MEM_Init in GS_init().
+ *! 21-May-1996 mg:  Created from original stdlib implementation.
  */
 
 /*  ----------------------------------- DSP/BIOS Bridge */
@@ -52,7 +65,7 @@ void *GS_alloc(u32 size)
  */
 void GS_exit(void)
 {
-	/* Do nothing */
+	MEM_Exit();
 }
 
 /*
@@ -62,7 +75,7 @@ void GS_exit(void)
  */
 void GS_free(void *ptr)
 {
-	kfree(ptr);
+	MEM_Free(ptr);
 	/* ack! no size info */
 	/* cumsize -= size; */
 }
@@ -74,7 +87,7 @@ void GS_free(void *ptr)
  */
 void GS_frees(void *ptr, u32 size)
 {
-	kfree(ptr);
+	MEM_Free(ptr);
 	cumsize -= size;
 }
 
@@ -85,5 +98,9 @@ void GS_frees(void *ptr, u32 size)
  */
 void GS_init(void)
 {
-	/* Do nothing */
+	static bool curInit;
+
+	if (curInit == false) {
+		curInit = MEM_Init(); /* which can't fail currently. */
+	}
 }

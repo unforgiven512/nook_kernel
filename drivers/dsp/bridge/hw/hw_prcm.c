@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * API definitions to configure PRCM (Power, Reset & Clocks Manager)
- *
  * Copyright (C) 2007 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,13 +14,24 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+/*
+ *  ======== hw_prcm.c ========
+ *  Description:
+ *      API definitions to configure PRCM (Power, Reset & Clocks Manager)
+ *
+ *! Revision History:
+ *! ================
+ *! 16 Feb 2003 sb: Initial version
+ */
+
 #include <GlobalTypes.h>
 #include "PRCMRegAcM.h"
 #include <hw_defs.h>
 #include <hw_prcm.h>
 
 static HW_STATUS HW_RST_WriteVal(const void __iomem *baseAddress,
-				    enum HW_RstModule_t r, s8 val);
+				    enum HW_RstModule_t r,
+				    enum HW_SetClear_t val);
 
 HW_STATUS HW_RST_Reset(const void __iomem *baseAddress, enum HW_RstModule_t r)
 {
@@ -35,7 +44,8 @@ HW_STATUS HW_RST_UnReset(const void __iomem *baseAddress, enum HW_RstModule_t r)
 }
 
 static HW_STATUS HW_RST_WriteVal(const void __iomem *baseAddress,
-				    enum HW_RstModule_t r, s8 val)
+				    enum HW_RstModule_t r,
+				    enum HW_SetClear_t val)
 {
 	HW_STATUS status = RET_OK;
 

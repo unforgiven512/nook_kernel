@@ -3,9 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Private header file defining MSG manager objects and defines needed
- * by IO manager.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -15,6 +12,24 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== _msg_sm.h ========
+ *  Description:
+ *      Private header file defining MSG manager objects and defines needed
+ *      by IO manager.
+ *
+ *  Public Functions:
+ *      None.
+ *
+ *  Notes:
+ *
+ *! Revision History:
+ *! ================
+ *! 09-May-2001 jeh     Code Review cleanup.
+ *! 08-Nov-2000 jeh     Created.
  */
 
 #ifndef _MSG_SM_
@@ -106,7 +121,7 @@ struct MSG_MGR {
  *  The MSG_QUEUE's hSynEvent gets posted when a message is ready.
  */
 struct MSG_QUEUE {
-	struct list_head listElem;
+	struct LST_ELEM listElem;
 	u32 dwSignature;
 	struct MSG_MGR *hMsgMgr;
 	u32 uMaxMsgs;	/* Node message depth */
@@ -135,7 +150,7 @@ struct MSG_DSPMSG {
  *  ======== MSG_FRAME ========
  */
 struct MSG_FRAME {
-	struct list_head listElem;
+	struct LST_ELEM listElem;
 	struct MSG_DSPMSG msgData;
 } ;
 

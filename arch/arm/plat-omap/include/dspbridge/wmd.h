@@ -3,18 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Bridge mini driver entry point and interface function declarations.
- *
- * Notes:
- *   The Bridge class driver obtains it's function interface to
- *   the Bridge mini driver via a call to WMD_DRV_Entry().
- *
- *   Bridge Class Driver services exported to WMD's are initialized by the
- *   WCD on behalf of the WMD.
- *
- *   WMD function DBC Requires and Ensures are also made by the WCD on
- *   behalf of the WMD, to simplify the WMD code.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -24,6 +12,51 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== wmd.h ========
+ *  Purpose:
+ *      'Bridge mini driver entry point and interface function declarations.
+ *
+ *  Public Functions:
+ *      WMD_DRV_Entry
+ *
+ *  Notes:
+ *      The 'Bridge class driver obtains it's function interface to
+ *      the 'Bridge mini driver via a call to WMD_DRV_Entry().
+ *
+ *      'Bridge Class Driver services exported to WMD's are initialized by the
+ *      WCD on behalf of the WMD.
+ *
+ *      WMD function DBC Requires and Ensures are also made by the WCD on
+ *      behalf of the WMD, to simplify the WMD code.
+ *
+ *! Revision History:
+ *! ================
+ *! 19-Apr-2004 sb  Aligned DMM definitions with Symbian
+ *! 08-Mar-2004 sb  Added the Dynamic Memory Mapping APIs - WMD_BRD_MemMap/UnMap
+ *! 01-Mar-2004 vp  Added filename argument to WMD_DRV_Entry function.
+ *! 29-Aug-2002 map Added WMD_BRD_MemWrite()
+ *! 26-Aug-2002 map Added WMD_BRD_MemCopy()
+ *! 07-Jan-2002 ag  Added cBufSize to WMD_CHNL_AddIOReq().
+ *! 05-Nov-2001 kc: Added error handling DEH functions.
+ *! 06-Dec-2000 jeh Added uEventMask to WMD_MSG_RegisterNotify().
+ *! 17-Nov-2000 jeh Added WMD_MSG and WMD_IO definitions.
+ *! 01-Nov-2000 jeh Added more error codes to WMD_CHNL_RegisterNotify().
+ *! 13-Oct-2000 jeh Added dwArg to WMD_CHNL_AddIOReq(), added WMD_CHNL_IDLE
+ *!                 and WMD_CHNL_RegisterNotify for DSPStream support.
+ *! 17-Jan-2000 rr: WMD_BRD_SETSTATE Added.
+ *! 30-Jul-1997 gp: Split wmd IOCTL space into reserved and private.
+ *! 07-Nov-1996 gp: Updated for code review.
+ *! 18-Oct-1996 gp: Added WMD_E_HARDWARE return code from WMD_BRD_Monitor.
+ *! 09-Sep-1996 gp: Subtly altered the semantics of WMD_CHNL_GetInfo().
+ *! 02-Aug-1996 gp: Ensured on BRD_Start that interrupts to the PC are enabled.
+ *! 11-Jul-1996 gp: Added CHNL interface. Note stronger DBC_Require conditions.
+ *! 29-May-1996 gp: Removed WCD_ prefix from functions imported from WCD.LIB.
+ *! 29-May-1996 gp: Made OUT param first in WMD_DEV_Create().
+ *! 09-May-1996 gp: Created.
  */
 
 #ifndef WMD_
@@ -244,7 +277,7 @@
  */
        typedef DSP_STATUS(*
 			   WMD_BRD_STATUS) (struct WMD_DEV_CONTEXT *hDevContext,
-					    int *pdwState);
+					    OUT BRD_STATUS * pdwState);
 
 /*
  *  ======== WMD_BRD_Read ========
@@ -418,7 +451,7 @@ typedef DSP_STATUS(*WMD_BRD_WRITE)(struct WMD_DEV_CONTEXT *hDevContext,
        typedef DSP_STATUS(*WMD_CHNL_OPEN) (OUT struct CHNL_OBJECT
 						   **phChnl,
 						   struct CHNL_MGR *hChnlMgr,
-						   short int uMode,
+						   CHNL_MODE uMode,
 						   u32 uChnlId,
 						   CONST IN OPTIONAL struct
 						   CHNL_ATTRS *pAttrs);

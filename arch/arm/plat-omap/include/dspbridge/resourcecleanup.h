@@ -14,6 +14,7 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef RES_CLEANUP_DISABLE
 
 #include <dspbridge/nodepriv.h>
 #include <dspbridge/drv.h>
@@ -28,6 +29,9 @@ extern DSP_STATUS DRV_InsertProcContext(struct DRV_OBJECT *hDrVObject,
 extern DSP_STATUS DRV_RemoveAllDMMResElements(HANDLE pCtxt);
 
 extern DSP_STATUS DRV_RemoveAllNodeResElements(HANDLE pCtxt);
+
+extern DSP_STATUS DRV_ProcUpdatestate(HANDLE pCtxt,
+				      enum GPP_PROC_RES_STATE resState);
 
 extern DSP_STATUS DRV_ProcSetPID(HANDLE pCtxt, s32 hProcess);
 
@@ -48,7 +52,19 @@ extern DSP_STATUS DRV_RemoveNodeResElement(HANDLE nodeRes, HANDLE status);
 
 extern void DRV_ProcNodeUpdateStatus(HANDLE hNodeRes, s32 status);
 
-extern DSP_STATUS DRV_ProcUpdateSTRMRes(u32 uNumBufs, HANDLE STRMRes);
+extern DSP_STATUS DRV_UpdateDMMResElement(HANDLE dmmRes, u32 pMpuAddr,
+					  u32 ulSize, u32 pReqAddr,
+					  u32 ppMapAddr, HANDLE hProcesso);
+
+extern DSP_STATUS DRV_InsertDMMResElement(HANDLE dmmRes, HANDLE pCtxt);
+
+extern DSP_STATUS DRV_GetDMMResElement(u32 pMapAddr, HANDLE dmmRes,
+				       HANDLE pCtxt);
+
+extern DSP_STATUS DRV_RemoveDMMResElement(HANDLE dmmRes, HANDLE pCtxt);
+
+extern DSP_STATUS DRV_ProcUpdateSTRMRes(u32 uNumBufs, HANDLE STRMRes,
+					HANDLE pCtxt);
 
 extern DSP_STATUS DRV_ProcInsertSTRMResElement(HANDLE hStrm, HANDLE STRMRes,
 						HANDLE pPctxt);
@@ -62,3 +78,4 @@ extern DSP_STATUS DRV_RemoveAllSTRMResElements(HANDLE pCtxt);
 
 extern enum NODE_STATE NODE_GetState(HANDLE hNode);
 
+#endif

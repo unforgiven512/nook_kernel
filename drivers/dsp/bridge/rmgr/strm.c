@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * DSP/BIOS Bridge Stream Manager.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,53 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== strm.c ========
+ *  Description:
+ *      DSP/BIOS Bridge Stream Manager.
+ *
+ *  Public Functions:
+ *      STRM_AllocateBuffer
+ *      STRM_Close
+ *      STRM_Create
+ *      STRM_Delete
+ *      STRM_Exit
+ *      STRM_FreeBuffer
+ *      STRM_GetEventHandle
+ *      STRM_GetInfo
+ *      STRM_Idle
+ *      STRM_Init
+ *      STRM_Issue
+ *      STRM_Open
+ *      STRM_PrepareBuffer
+ *      STRM_Reclaim
+ *      STRM_RegisterNotify
+ *      STRM_Select
+ *      STRM_UnprepareBuffer
+ *
+ *  Notes:
+ *
+ *! Revision History:
+ *! =================
+ *! 18-Feb-2003 vp  Code review updates.
+ *! 18-Oct-2002 vp  Ported to Linux platform.
+ *! 13-Mar-2002 map    pStrm init'd to NULL in STRM_Open to prevent error
+ *! 12-Mar-2002 map Changed return var to WSX "wStatus" instead of "status"
+ *!		    in DEV and CMM function calls to avoid confusion.
+ *!		    Return DSP_SOK instead of S_OK from API fxns.
+ *! 12-Mar-2002 map    Changed FAILED(..) to DSP_FAILED(..)
+ *! 25-Jan-2002 ag  Allow neg seg ids(e.g. DSP_SHMSEG0) to denote SM.
+ *! 15-Nov-2001 ag  Added STRMMODE & SM for DMA/ZCopy streaming.
+ *!		 Changed DSP_STREAMINFO to STRM_INFO in STRM_GetInfo().
+ *!		 Use strm timeout value for dma flush timeout.
+ *! 09-May-2001 jeh Code review cleanup.
+ *! 06-Feb-2001 kc  Updated DBC_Ensure in STRM_Select to check timeout.
+ *! 23-Oct-2000 jeh Allow NULL STRM_ATTRS passed to STRM_Open() for DLL
+ *!		 tests to pass.
+ *! 25-Sep-2000 jeh Created.
  */
 
 /*  ----------------------------------- Host OS */
@@ -44,8 +89,10 @@
 /*  ----------------------------------- This */
 #include <dspbridge/strm.h>
 
+#ifndef RES_CLEANUP_DISABLE
 #include <dspbridge/cfg.h>
 #include <dspbridge/resourcecleanup.h>
+#endif
 
 /*  ----------------------------------- Defines, Data Structures, Typedefs */
 #define STRM_SIGNATURE      0x4d525453	/* "MRTS" */
@@ -112,25 +159,34 @@ DSP_STATUS STRM_AllocateBuffer(struct STRM_OBJECT *hStrm, u32 uSize,
 	DSP_STATUS status = DSP_SOK;
 	u32 uAllocated = 0;
 	u32 i;
-
+#ifndef RES_CLEANUP_DISABLE
 	HANDLE hSTRMRes;
-
+#endif
 	DBC_Require(cRefs > 0);
 	DBC_Require(apBuffer != NULL);
 
-	/*
-	 * Allocate from segment specified at time of stream open.
-	 */
-	if (uSize == 0)
-		status = DSP_ESIZE;
+	GT_4trace(STRM_debugMask, GT_ENTER, "STRM_AllocateBuffer: hStrm: 0x%x\t"
+		 "uSize: 0x%x\tapBuffer: 0x%x\tuNumBufs: 0x%x\n",
+		 hStrm, uSize, apBuffer, uNumBufs);
+	if (MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		/*
+		 * Allocate from segment specified at time of stream open.
+		 */
+		if (uSize == 0)
+			status = DSP_ESIZE;
 
-	if (DSP_FAILED(status))
+	}
+	if (DSP_FAILED(status)) {
+		status = DSP_EHANDLE;
 		goto func_end;
-
+	}
 	for (i = 0; i < uNumBufs; i++) {
 		DBC_Assert(hStrm->hXlator != NULL);
 		(void)CMM_XlatorAllocBuf(hStrm->hXlator, &apBuffer[i], uSize);
 		if (apBuffer[i] == NULL) {
+			GT_0trace(STRM_debugMask, GT_7CLASS,
+				 "STRM_AllocateBuffer: "
+				 "DSP_FAILED to alloc shared memory.\n");
 			status = DSP_EMEMORY;
 			uAllocated = i;
 			break;
@@ -139,13 +195,14 @@ DSP_STATUS STRM_AllocateBuffer(struct STRM_OBJECT *hStrm, u32 uSize,
 	if (DSP_FAILED(status))
 		STRM_FreeBuffer(hStrm, apBuffer, uAllocated, pr_ctxt);
 
+#ifndef RES_CLEANUP_DISABLE
 	if (DSP_FAILED(status))
 		goto func_end;
 
 	if (DRV_GetSTRMResElement(hStrm, &hSTRMRes, pr_ctxt) !=
 			DSP_ENOTFOUND)
-		DRV_ProcUpdateSTRMRes(uNumBufs, hSTRMRes);
-
+		DRV_ProcUpdateSTRMRes(uNumBufs, hSTRMRes, pr_ctxt);
+#endif
 func_end:
 	return status;
 }
@@ -162,24 +219,39 @@ DSP_STATUS STRM_Close(struct STRM_OBJECT *hStrm,
 	struct CHNL_INFO chnlInfo;
 	DSP_STATUS status = DSP_SOK;
 
-	HANDLE	      hSTRMRes;
+#ifndef RES_CLEANUP_DISABLE
+    HANDLE	      hSTRMRes;
+#endif
 
 	DBC_Require(cRefs > 0);
 
 	GT_1trace(STRM_debugMask, GT_ENTER, "STRM_Close: hStrm: 0x%x\n", hStrm);
 
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+	} else {
+		/* Have all buffers been reclaimed? If not, return
+		 * DSP_EPENDING */
+		pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
+		status = (*pIntfFxns->pfnChnlGetInfo) (hStrm->hChnl, &chnlInfo);
+		DBC_Assert(DSP_SUCCEEDED(status));
 
-	/* Have all buffers been reclaimed? If not, return
-	 * DSP_EPENDING */
-	pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
-	status = (*pIntfFxns->pfnChnlGetInfo) (hStrm->hChnl, &chnlInfo);
-	DBC_Assert(DSP_SUCCEEDED(status));
+		if (chnlInfo.cIOCs > 0 || chnlInfo.cIOReqs > 0) {
+			status = DSP_EPENDING;
+		} else {
 
-	if (chnlInfo.cIOCs > 0 || chnlInfo.cIOReqs > 0)
-		status = DSP_EPENDING;
-	else
-		status = DeleteStrm(hStrm);
+			status = DeleteStrm(hStrm);
 
+			if (DSP_FAILED(status)) {
+				/* we already validated the handle. */
+				DBC_Assert(status != DSP_EHANDLE);
+
+				/* make sure we return a documented result */
+				status = DSP_EFAIL;
+			}
+		}
+	}
+#ifndef RES_CLEANUP_DISABLE
 	if (DSP_FAILED(status))
 		goto func_end;
 
@@ -187,6 +259,7 @@ DSP_STATUS STRM_Close(struct STRM_OBJECT *hStrm,
 			DSP_ENOTFOUND)
 		DRV_ProcRemoveSTRMResElement(hSTRMRes, pr_ctxt);
 func_end:
+#endif
 	DBC_Ensure(status == DSP_SOK || status == DSP_EHANDLE ||
 		  status == DSP_EPENDING || status == DSP_EFAIL);
 
@@ -207,20 +280,28 @@ DSP_STATUS STRM_Create(OUT struct STRM_MGR **phStrmMgr, struct DEV_OBJECT *hDev)
 	DBC_Require(phStrmMgr != NULL);
 	DBC_Require(hDev != NULL);
 
+	GT_2trace(STRM_debugMask, GT_ENTER, "STRM_Create: phStrmMgr: "
+		 "0x%x\thDev: 0x%x\n", phStrmMgr, hDev);
 	*phStrmMgr = NULL;
 	/* Allocate STRM manager object */
 	MEM_AllocObject(pStrmMgr, struct STRM_MGR, STRMMGR_SIGNATURE);
-	if (pStrmMgr == NULL)
+	if (pStrmMgr == NULL) {
 		status = DSP_EMEMORY;
-	else
+		GT_0trace(STRM_debugMask, GT_6CLASS, "STRM_Create: "
+			 "MEM_AllocObject() failed!\n ");
+	} else {
 		pStrmMgr->hDev = hDev;
-
+	}
 	/* Get Channel manager and WMD function interface */
 	if (DSP_SUCCEEDED(status)) {
 		status = DEV_GetChnlMgr(hDev, &(pStrmMgr->hChnlMgr));
 		if (DSP_SUCCEEDED(status)) {
 			(void) DEV_GetIntfFxns(hDev, &(pStrmMgr->pIntfFxns));
 			DBC_Assert(pStrmMgr->pIntfFxns != NULL);
+		} else {
+			GT_1trace(STRM_debugMask, GT_6CLASS, "STRM_Create: "
+				 "Failed to get channel manager! status = "
+				 "0x%x\n", status);
 		}
 	}
 	if (DSP_SUCCEEDED(status))
@@ -248,6 +329,9 @@ void STRM_Delete(struct STRM_MGR *hStrmMgr)
 	DBC_Require(cRefs > 0);
 	DBC_Require(MEM_IsValidHandle(hStrmMgr, STRMMGR_SIGNATURE));
 
+	GT_1trace(STRM_debugMask, GT_ENTER, "STRM_Delete: hStrmMgr: 0x%x\n",
+		 hStrmMgr);
+
 	DeleteStrmMgr(hStrmMgr);
 
 	DBC_Ensure(!MEM_IsValidHandle(hStrmMgr, STRMMGR_SIGNATURE));
@@ -264,6 +348,9 @@ void STRM_Exit(void)
 
 	cRefs--;
 
+	GT_1trace(STRM_debugMask, GT_5CLASS,
+		 "Entered STRM_Exit, ref count:  0x%x\n", cRefs);
+
 	DBC_Ensure(cRefs >= 0);
 }
 
@@ -278,24 +365,36 @@ DSP_STATUS STRM_FreeBuffer(struct STRM_OBJECT *hStrm, u8 **apBuffer,
 	DSP_STATUS status = DSP_SOK;
 	u32 i = 0;
 
+#ifndef RES_CLEANUP_DISABLE
 	HANDLE hSTRMRes = NULL;
-
+#endif
 	DBC_Require(cRefs > 0);
 	DBC_Require(apBuffer != NULL);
 
-	for (i = 0; i < uNumBufs; i++) {
-		DBC_Assert(hStrm->hXlator != NULL);
-		status = CMM_XlatorFreeBuf(hStrm->hXlator, apBuffer[i]);
-		if (DSP_FAILED(status))
-			break;
-		apBuffer[i] = NULL;
-	}
+	GT_3trace(STRM_debugMask, GT_ENTER, "STRM_FreeBuffer: hStrm: 0x%x\t"
+		 "apBuffer: 0x%x\tuNumBufs: 0x%x\n", hStrm, apBuffer, uNumBufs);
+
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE))
+		status = DSP_EHANDLE;
 
 	if (DSP_SUCCEEDED(status)) {
-		if (DRV_GetSTRMResElement(hStrm, hSTRMRes, pr_ctxt) !=
-				DSP_ENOTFOUND)
-			DRV_ProcUpdateSTRMRes(uNumBufs-i, hSTRMRes);
+		for (i = 0; i < uNumBufs; i++) {
+			DBC_Assert(hStrm->hXlator != NULL);
+			status = CMM_XlatorFreeBuf(hStrm->hXlator, apBuffer[i]);
+			if (DSP_FAILED(status)) {
+				GT_0trace(STRM_debugMask, GT_7CLASS,
+					 "STRM_FreeBuffer: DSP_FAILED"
+					 " to free shared memory.\n");
+				break;
+			}
+			apBuffer[i] = NULL;
+		}
 	}
+#ifndef RES_CLEANUP_DISABLE
+	if (DRV_GetSTRMResElement(hStrm, hSTRMRes, pr_ctxt) !=
+			DSP_ENOTFOUND)
+		DRV_ProcUpdateSTRMRes(uNumBufs-i, hSTRMRes, pr_ctxt);
+#endif
 	return status;
 }
 
@@ -317,12 +416,17 @@ DSP_STATUS STRM_GetInfo(struct STRM_OBJECT *hStrm,
 	DBC_Require(pStreamInfo != NULL);
 	DBC_Require(uStreamInfoSize >= sizeof(struct STRM_INFO));
 
-
-	if (uStreamInfoSize < sizeof(struct STRM_INFO)) {
-		/* size of users info */
-		status = DSP_ESIZE;
+	GT_3trace(STRM_debugMask, GT_ENTER, "STRM_GetInfo: hStrm: 0x%x\t"
+		 "pStreamInfo: 0x%x\tuStreamInfoSize: 0x%x\n", hStrm,
+		 pStreamInfo, uStreamInfoSize);
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+	} else {
+		if (uStreamInfoSize < sizeof(struct STRM_INFO)) {
+			/* size of users info */
+			status = DSP_ESIZE;
+		}
 	}
-
 	if (DSP_FAILED(status))
 		goto func_end;
 
@@ -377,11 +481,14 @@ DSP_STATUS STRM_Idle(struct STRM_OBJECT *hStrm, bool fFlush)
 	GT_2trace(STRM_debugMask, GT_ENTER, "STRM_Idle: hStrm: 0x%x\t"
 		 "fFlush: 0x%x\n", hStrm, fFlush);
 
-	pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+	} else {
+		pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
 
-	status = (*pIntfFxns->pfnChnlIdle) (hStrm->hChnl,
-		 hStrm->uTimeout, fFlush);
-
+		status = (*pIntfFxns->pfnChnlIdle) (hStrm->hChnl,
+			 hStrm->uTimeout, fFlush);
+	}
 	return status;
 }
 
@@ -406,6 +513,9 @@ bool STRM_Init(void)
 	if (fRetVal)
 		cRefs++;
 
+	GT_1trace(STRM_debugMask, GT_5CLASS, "STRM_Init(), ref count: 0x%x\n",
+		 cRefs);
+
 	DBC_Ensure((fRetVal && (cRefs > 0)) || (!fRetVal && (cRefs >= 0)));
 
 	return fRetVal;
@@ -429,24 +539,31 @@ DSP_STATUS STRM_Issue(struct STRM_OBJECT *hStrm, IN u8 *pBuf, u32 ulBytes,
 	GT_4trace(STRM_debugMask, GT_ENTER, "STRM_Issue: hStrm: 0x%x\tpBuf: "
 		 "0x%x\tulBytes: 0x%x\tdwArg: 0x%x\n", hStrm, pBuf, ulBytes,
 		 dwArg);
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+	} else {
+		pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
 
-	pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
+		if (hStrm->uSegment != 0) {
+			pTmpBuf = CMM_XlatorTranslate(hStrm->hXlator,
+					(void *)pBuf, CMM_VA2DSPPA);
+			if (pTmpBuf == NULL)
+				status = DSP_ETRANSLATE;
 
-	if (hStrm->uSegment != 0) {
-		pTmpBuf = CMM_XlatorTranslate(hStrm->hXlator,
-				(void *)pBuf, CMM_VA2DSPPA);
-		if (pTmpBuf == NULL)
-			status = DSP_ETRANSLATE;
+		}
+		if (DSP_SUCCEEDED(status)) {
+			status = (*pIntfFxns->pfnChnlAddIOReq)
+				 (hStrm->hChnl, pBuf, ulBytes, ulBufSize,
+				 (u32) pTmpBuf, dwArg);
+		}
+		if (DSP_FAILED(status)) {
+			if (status == CHNL_E_NOIORPS)
+				status = DSP_ESTREAMFULL;
+			else
+				status = DSP_EFAIL;
 
+		}
 	}
-	if (DSP_SUCCEEDED(status)) {
-		status = (*pIntfFxns->pfnChnlAddIOReq)
-			 (hStrm->hChnl, pBuf, ulBytes, ulBufSize,
-			 (u32) pTmpBuf, dwArg);
-	}
-	if (status == CHNL_E_NOIORPS)
-		status = DSP_ESTREAMFULL;
-
 	return status;
 }
 
@@ -465,13 +582,14 @@ DSP_STATUS STRM_Open(struct NODE_OBJECT *hNode, u32 uDir, u32 uIndex,
 	struct WMD_DRV_INTERFACE *pIntfFxns;
 	u32 ulChnlId;
 	struct STRM_OBJECT *pStrm = NULL;
-	short int uMode;
+	CHNL_MODE uMode;
 	struct CHNL_ATTRS chnlAttrs;
 	DSP_STATUS status = DSP_SOK;
 	struct CMM_OBJECT *hCmmMgr = NULL;	/* Shared memory manager hndl */
 
+#ifndef RES_CLEANUP_DISABLE
 	HANDLE hSTRMRes;
-
+#endif
 	DBC_Require(cRefs > 0);
 	DBC_Require(phStrm != NULL);
 	DBC_Require(pAttr != NULL);
@@ -493,6 +611,8 @@ DSP_STATUS STRM_Open(struct NODE_OBJECT *hNode, u32 uDir, u32 uIndex,
 		MEM_AllocObject(pStrm, struct STRM_OBJECT, STRM_SIGNATURE);
 		if (pStrm == NULL) {
 			status = DSP_EMEMORY;
+			GT_0trace(STRM_debugMask, GT_6CLASS,
+				 "STRM_Open: MEM_AllocObject() failed!\n ");
 		} else {
 			pStrm->hStrmMgr = hStrmMgr;
 			pStrm->uDir = uDir;
@@ -542,15 +662,27 @@ DSP_STATUS STRM_Open(struct NODE_OBJECT *hNode, u32 uDir, u32 uIndex,
 	DBC_Assert(pStrm->lMode != STRMMODE_LDMA);	/* no System DMA */
 	/* Get the shared mem mgr for this streams dev object */
 	status = DEV_GetCmmMgr(hStrmMgr->hDev, &hCmmMgr);
-	if (DSP_SUCCEEDED(status)) {
+	if (DSP_FAILED(status)) {
+		GT_1trace(STRM_debugMask, GT_6CLASS, "STRM_Open: Failed to get "
+			 "CMM Mgr handle: 0x%x\n", status);
+	} else {
 		/*Allocate a SM addr translator for this strm.*/
 		status = CMM_XlatorCreate(&pStrm->hXlator, hCmmMgr, NULL);
-		if (DSP_SUCCEEDED(status)) {
+		if (DSP_FAILED(status)) {
+			GT_1trace(STRM_debugMask, GT_6CLASS,
+				 "STRM_Open: Failed to "
+				 "create SM translator: 0x%x\n", status);
+		} else {
 			DBC_Assert(pStrm->uSegment > 0);
 			/*  Set translators Virt Addr attributes */
 			status = CMM_XlatorInfo(pStrm->hXlator,
 				 (u8 **)&pAttr->pVirtBase, pAttr->ulVirtSize,
 				 pStrm->uSegment, true);
+			if (status != DSP_SOK) {
+				GT_0trace(STRM_debugMask, GT_6CLASS,
+					 "STRM_Open: ERROR: "
+					 "in setting CMM_XlatorInfo.\n");
+			}
 		}
 	}
 func_cont:
@@ -581,14 +713,20 @@ func_cont:
 					   status == CHNL_E_NOIORPS);
 				status = DSP_EFAIL;
 			}
+			GT_2trace(STRM_debugMask, GT_6CLASS,
+				  "STRM_Open: Channel open failed, "
+				  "chnl id = %d, status = 0x%x\n", ulChnlId,
+				  status);
 		}
 	}
-	if (DSP_SUCCEEDED(status)) {
+	if (DSP_SUCCEEDED(status))
 		*phStrm = pStrm;
-		DRV_ProcInsertSTRMResElement(*phStrm, &hSTRMRes, pr_ctxt);
-	} else {
+	else
 		(void)DeleteStrm(pStrm);
-	}
+
+#ifndef RES_CLEANUP_DISABLE
+	DRV_ProcInsertSTRMResElement(*phStrm, &hSTRMRes, pr_ctxt);
+#endif
 
 	 /* ensure we return a documented error code */
 	DBC_Ensure((DSP_SUCCEEDED(status) &&
@@ -622,11 +760,19 @@ DSP_STATUS STRM_Reclaim(struct STRM_OBJECT *hStrm, OUT u8 **pBufPtr,
 		 "\tpulBytes: 0x%x\tpdwArg: 0x%x\n", hStrm, pBufPtr, pulBytes,
 		 pdwArg);
 
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+		goto func_end;
+	}
 	pIntfFxns = hStrm->hStrmMgr->pIntfFxns;
 
 	status = (*pIntfFxns->pfnChnlGetIOC)(hStrm->hChnl, hStrm->uTimeout,
 		 &chnlIOC);
-	if (DSP_SUCCEEDED(status)) {
+	if (DSP_FAILED(status)) {
+		GT_1trace(STRM_debugMask, GT_6CLASS,
+			 "STRM_Reclaim: GetIOC failed! "
+			 "Status = 0x%x\n", status);
+	} else {
 		*pulBytes = chnlIOC.cBytes;
 		if (pulBufSize)
 			*pulBufSize = chnlIOC.cBufSize;
@@ -659,13 +805,17 @@ DSP_STATUS STRM_Reclaim(struct STRM_OBJECT *hStrm, OUT u8 **pBufPtr,
 				pTmpBuf = CMM_XlatorTranslate(hStrm->hXlator,
 					  pTmpBuf, CMM_PA2VA);
 			}
-			if (pTmpBuf == NULL)
+			if (pTmpBuf == NULL) {
+				GT_0trace(STRM_debugMask, GT_7CLASS,
+					 "STRM_Reclaim: Failed "
+					 "SM translation!\n");
 				status = DSP_ETRANSLATE;
-
+			}
 			chnlIOC.pBuf = pTmpBuf;
 		}
 		*pBufPtr = chnlIOC.pBuf;
 	}
+func_end:
 	/* ensure we return a documented return code */
 	DBC_Ensure(DSP_SUCCEEDED(status) || status == DSP_EHANDLE ||
 		  status == DSP_ETIMEOUT || status == DSP_ETRANSLATE ||
@@ -688,8 +838,13 @@ DSP_STATUS STRM_RegisterNotify(struct STRM_OBJECT *hStrm, u32 uEventMask,
 	DBC_Require(cRefs > 0);
 	DBC_Require(hNotification != NULL);
 
-
-	if ((uEventMask & ~((DSP_STREAMIOCOMPLETION) |
+	GT_4trace(STRM_debugMask, GT_ENTER,
+		 "STRM_RegisterNotify: hStrm: 0x%x\t"
+		 "uEventMask: 0x%x\tuNotifyType: 0x%x\thNotification: 0x%x\n",
+		 hStrm, uEventMask, uNotifyType, hNotification);
+	if (!MEM_IsValidHandle(hStrm, STRM_SIGNATURE)) {
+		status = DSP_EHANDLE;
+	} else if ((uEventMask & ~((DSP_STREAMIOCOMPLETION) |
 		 DSP_STREAMDONE)) != 0) {
 		status = DSP_EVALUE;
 	} else {
@@ -730,6 +885,10 @@ DSP_STATUS STRM_Select(IN struct STRM_OBJECT **aStrmTab, u32 nStrms,
 	DBC_Require(pMask != NULL);
 	DBC_Require(nStrms > 0);
 
+	GT_4trace(STRM_debugMask, GT_ENTER,
+		 "STRM_Select: aStrmTab: 0x%x \tnStrms: "
+		 "0x%x\tpMask: 0x%x\tuTimeout: 0x%x\n", aStrmTab,
+		 nStrms, pMask, uTimeout);
 	*pMask = 0;
 	for (i = 0; i < nStrms; i++) {
 		if (!MEM_IsValidHandle(aStrmTab[i], STRM_SIGNATURE)) {
@@ -783,7 +942,8 @@ DSP_STATUS STRM_Select(IN struct STRM_OBJECT **aStrmTab, u32 nStrms,
 		}
 	}
 func_end:
-	kfree(hSyncEvents);
+	if (hSyncEvents)
+		MEM_Free(hSyncEvents);
 
 	DBC_Ensure((DSP_SUCCEEDED(status) && (*pMask != 0 || uTimeout == 0)) ||
 		  (DSP_FAILED(status) && *pMask == 0));

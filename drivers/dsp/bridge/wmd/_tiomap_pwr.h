@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Definitions and types for the DSP wake/sleep routines.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,17 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== _tiomap_pwr.h ========
+ *  Description:
+ *      Definitions and types for the DSP wake/sleep routines.
+ *
+ *! Revision History
+ *! ================
+ *! 08-Oct-2002 rr:  Created.
  */
 
 #ifndef _TIOMAP_PWR_
@@ -88,6 +97,12 @@ DSP_STATUS DSP_PeripheralClocks_Enable(struct WMD_DEV_CONTEXT *pDevContext,
  *     enabling/disabling.
  */
 void DSPClkWakeupEventCtrl(u32 ClkId, bool enable);
+
+/*
+ *  ======== tiomap3430_bump_dsp_opp_level ========
+ *  	This function bumps DSP OPP level if it is OPP1
+ */
+DSP_STATUS tiomap3430_bump_dsp_opp_level(void);
 
 #endif				/* _TIOMAP_PWR_ */
 

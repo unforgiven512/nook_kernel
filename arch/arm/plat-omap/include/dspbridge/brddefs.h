@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Global BRD constants and types, shared between WCD and WMD.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,22 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== brddefs.h ========
+ *  Description:
+ *      Global BRD constants and types, shared between WSX, WCD, and WMD.
+ *
+ *! Revision History:
+ *! ================
+ *! 31-Jan-2000 rr: Comment Exec changed to Monitor
+ *! 22-Jul-1999 jeh Added BRD_LOADED state.
+ *! 26-Mar-1997 gp: Added BRD_SYNCINIT state.
+ *! 11-Dec-1996 cr: Added BRD_LASTSTATE definition.
+ *! 11-Jul-1996 gp: Added missing u32 callback argument to BRD_CALLBACK.
+ *! 10-Jun-1996 gp: Created from board.h and brd.h.
  */
 
 #ifndef BRDDEFS_
@@ -32,6 +46,7 @@
 #define BRD_RETENTION     0x8       /* Retention mode */
 #define BRD_DSP_HIBERNATION     0x9       /* DSP initiated hibernation */
 #define BRD_ERROR		0xA       /* Board state is Error */
+	typedef u32 BRD_STATUS;
 
 /* BRD Object */
 	struct BRD_OBJECT;

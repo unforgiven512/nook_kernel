@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Provide SERVICES loading.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,24 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== services.c ========
+ *  Purpose:
+ *      Provide SERVICES loading.
+ *
+ *  Public Functions:
+ *      SERVICES_Exit
+ *      SERVICES_Init
+ *
+ *
+ *! Revision History
+ *! ================
+ *! 20-Nov-2000 rr: NTFY_Init/Exit added.
+ *! 06-Jul-2000 rr: PROC prefix changed to PRCS to accomodate RM.
+ *! 01-Feb-2000 kc: Created.
  */
 
 #include <dspbridge/host_os.h>
@@ -29,6 +45,8 @@
 /*  ----------------------------------- OS Adaptation Layer */
 #include <dspbridge/cfg.h>
 #include <dspbridge/dbg.h>
+#include <dspbridge/dpc.h>
+#include <dspbridge/list.h>
 #include <dspbridge/mem.h>
 #include <dspbridge/ntfy.h>
 #include <dspbridge/reg.h>
@@ -43,6 +61,8 @@
 static struct GT_Mask SERVICES_debugMask = { NULL, NULL };  /* GT trace var. */
 #endif
 
+static u32 cRefs;		/* SERVICES module reference count */
+
 /*
  *  ======== SERVICES_Exit ========
  *  Purpose:
@@ -51,16 +71,28 @@ static struct GT_Mask SERVICES_debugMask = { NULL, NULL };  /* GT trace var. */
  */
 void SERVICES_Exit(void)
 {
-	/* Uninitialize all SERVICES modules here */
-	NTFY_Exit();
-	SYNC_Exit();
-	CLK_Exit();
-	REG_Exit();
-	DBG_Exit();
-	CFG_Exit();
-	MEM_Exit();
+	DBC_Require(cRefs > 0);
 
-	GT_exit();
+	GT_1trace(SERVICES_debugMask, GT_5CLASS, "SERVICES_Exit: cRefs 0x%x\n",
+		 cRefs);
+
+	cRefs--;
+	if (cRefs == 0) {
+		/* Uninitialize all SERVICES modules here */
+		NTFY_Exit();
+		SYNC_Exit();
+		CLK_Exit();
+		REG_Exit();
+		LST_Exit();
+		DPC_Exit();
+		DBG_Exit();
+		CFG_Exit();
+		MEM_Exit();
+
+		GT_exit();
+	}
+
+	DBC_Ensure(cRefs >= 0);
 }
 
 /*
@@ -71,46 +103,71 @@ void SERVICES_Exit(void)
 bool SERVICES_Init(void)
 {
 	bool fInit = true;
-	bool fCFG, fDBG, fMEM;
+	bool fCFG, fDBG, fDPC, fLST, fMEM;
 	bool fREG, fSYNC, fCLK, fNTFY;
 
-	GT_init();
-	GT_create(&SERVICES_debugMask, "OS");	/* OS for OSal */
+	DBC_Require(cRefs >= 0);
 
-	/* Perform required initialization of SERVICES modules. */
-	fMEM = MEM_Init();
-	fSYNC = SYNC_Init();
-	fREG = REG_Init();
-	fCFG = CFG_Init();
-	fDBG = DBG_Init();
-	fCLK  = CLK_Init();
-	fNTFY = NTFY_Init();
+	if (cRefs == 0) {
 
-	fInit = fCFG && fDBG && fMEM && fREG && fSYNC && fCLK;
+		GT_init();
+		GT_create(&SERVICES_debugMask, "OS");	/* OS for OSal */
 
-	if (!fInit) {
-		if (fNTFY)
-			NTFY_Exit();
+		GT_0trace(SERVICES_debugMask, GT_ENTER,
+			 "SERVICES_Init: entered\n");
 
-		if (fSYNC)
-			SYNC_Exit();
+		/* Perform required initialization of SERVICES modules. */
+		fMEM = MEM_Init();
+		fSYNC = SYNC_Init();
+		fREG = REG_Init();
+		fCFG = CFG_Init();
+		fDBG = DBG_Init();
+		fDPC = DPC_Init();
+		fLST = LST_Init();
+		fCLK  = CLK_Init();
+		fNTFY = NTFY_Init();
 
-		if (fCLK)
-			CLK_Exit();
+		fInit = fCFG && fDBG && fDPC &&
+			fLST && fMEM && fREG && fSYNC && fCLK;
 
-		if (fREG)
-			REG_Exit();
+		if (!fInit) {
+			if (fNTFY)
+				NTFY_Exit();
 
-		if (fDBG)
-			DBG_Exit();
+			if (fSYNC)
+				SYNC_Exit();
 
-		if (fCFG)
-			CFG_Exit();
+			if (fCLK)
+				CLK_Exit();
 
-		if (fMEM)
-			MEM_Exit();
+			if (fREG)
+				REG_Exit();
 
+			if (fLST)
+				LST_Exit();
+
+			if (fDPC)
+				DPC_Exit();
+
+			if (fDBG)
+				DBG_Exit();
+
+			if (fCFG)
+				CFG_Exit();
+
+			if (fMEM)
+				MEM_Exit();
+
+		}
 	}
+
+	if (fInit)
+		cRefs++;
+
+	GT_1trace(SERVICES_debugMask, GT_5CLASS, "SERVICES_Init: cRefs 0x%x\n",
+		 cRefs);
+
+	DBC_Ensure((fInit && (cRefs > 0)) || (!fInit && (cRefs >= 0)));
 
 	return fInit;
 }

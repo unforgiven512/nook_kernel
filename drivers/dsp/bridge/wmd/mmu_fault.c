@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Implements DSP MMU fault handling functions.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,23 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+/*
+ *  ======== mmu_fault.c ========
+ *  Description:
+ *      Implements DSP MMU fault handling functions.
+ *
+ *! Revision History:
+ *! ================
+ *! 26-Dec-2004 hn: Support for IVA MMU exception.
+ *! 06-Mar-2003 sb: Print MMU fault address. Cosmetic changes.
+ *! 16-Feb-2003 vp: Fixed warning in MMU_FaultIsr
+ *! 05-Jan-2004 vp: Updated support for 24xx silicon
+ *! 19-Feb-2003 vp: Code review updates.
+ *!                 - Cosmetic changes.
+ *! 18-Oct-2002 sb: Ported to Linux platform.
+ *! 10-Sep-2001 kc: created.
  */
 
 /*  ----------------------------------- DSP/BIOS Bridge */
@@ -27,6 +42,7 @@
 #include <dspbridge/dbg.h>
 
 /*  ----------------------------------- OS Adaptation Layer */
+#include <dspbridge/dpc.h>
 #include <dspbridge/mem.h>
 #include <dspbridge/drv.h>
 
@@ -53,13 +69,17 @@ static bool MMU_CheckIfFault(struct WMD_DEV_CONTEXT *pDevContext);
  *  ======== MMU_FaultDpc ========
  *      Deferred procedure call to handle DSP MMU fault.
  */
-void MMU_FaultDpc(IN unsigned long pRefData)
+void MMU_FaultDpc(IN void *pRefData)
 {
 	struct DEH_MGR *hDehMgr = (struct DEH_MGR *)pRefData;
+	struct DEH_MGR *pDehMgr = (struct DEH_MGR *)hDehMgr;
 
-	if (hDehMgr)
+	DBG_Trace(DBG_LEVEL1, "MMU_FaultDpc Enter: 0x%x\n", pRefData);
+
+	if (pDehMgr)
 		WMD_DEH_Notify(hDehMgr, DSP_MMUFAULT, 0L);
 
+	DBG_Trace(DBG_LEVEL1, "MMU_FaultDpc Exit: 0x%x\n", pRefData);
 }
 
 /*
@@ -70,26 +90,33 @@ irqreturn_t  MMU_FaultIsr(int irq, IN void *pRefData)
 {
 	struct DEH_MGR *pDehMgr = (struct DEH_MGR *)pRefData;
 	struct WMD_DEV_CONTEXT *pDevContext;
+	DSP_STATUS status = DSP_SOK;
 
-	DBC_Require(irq == INT_DSP_MMU_IRQ);
+
+	DBG_Trace(DBG_LEVEL1, "Entering DEH_DspMmuIsr: 0x%x\n", pRefData);
+       DBC_Require(irq == INT_DSP_MMU_IRQ);
 	DBC_Require(MEM_IsValidHandle(pDehMgr, SIGNATURE));
 
 	if (MEM_IsValidHandle(pDehMgr, SIGNATURE)) {
 
 		pDevContext = (struct WMD_DEV_CONTEXT *)pDehMgr->hWmdContext;
-
+		if (DSP_FAILED(status))
+			DBG_Trace(DBG_LEVEL7,
+				 "**Failed to get Host Resources "
+				 "in MMU ISR **\n");
 		if (MMU_CheckIfFault(pDevContext)) {
 			printk(KERN_INFO "***** DSPMMU FAULT ***** IRQStatus "
 				"0x%x\n", dmmuEventMask);
 			printk(KERN_INFO "***** DSPMMU FAULT ***** faultAddr "
 				"0x%x\n", faultAddr);
+			/* Disable the MMU events, else once we clear it will
+			 * start to raise INTs again */
 			/*
 			 * Schedule a DPC directly. In the future, it may be
 			 * necessary to check if DSP MMU fault is intended for
 			 * Bridge.
 			 */
-			tasklet_schedule(&pDehMgr->dpc_tasklet);
-
+			DPC_Schedule(pDehMgr->hMmuFaultDpc);
 			/* Reset errInfo structure before use. */
 			pDehMgr->errInfo.dwErrMask = DSP_MMUFAULT;
 			pDehMgr->errInfo.dwVal1 = faultAddr >> 16;
@@ -100,11 +127,14 @@ irqreturn_t  MMU_FaultIsr(int irq, IN void *pRefData)
 			HW_MMU_EventDisable(pDevContext->dwDSPMmuBase,
 					    HW_MMU_TRANSLATION_FAULT);
 		} else {
+			DBG_Trace(DBG_LEVEL7,
+				 "***** MMU FAULT ***** faultcode 0x%x\n",
+				 dmmuEventMask);
 			HW_MMU_EventDisable(pDevContext->dwDSPMmuBase,
 					    HW_MMU_ALL_INTERRUPTS);
 		}
 	}
-	return IRQ_HANDLED;
+       return IRQ_HANDLED;
 }
 
 
@@ -118,11 +148,18 @@ static bool MMU_CheckIfFault(struct WMD_DEV_CONTEXT *pDevContext)
 
 
 	bool retVal = false;
+	DSP_STATUS status = DSP_SOK;
+	HW_STATUS hwStatus;
 
-	HW_MMU_EventStatus(pDevContext->dwDSPMmuBase,
-					&dmmuEventMask);
+	if (DSP_FAILED(status))
+		DBG_Trace(DBG_LEVEL7, "**Failed to get Host Resources in "
+			 "MMU_CheckIfFault **\n");
+
+	hwStatus = HW_MMU_EventStatus(pDevContext->dwDSPMmuBase, &dmmuEventMask);
 	if (dmmuEventMask  ==  HW_MMU_TRANSLATION_FAULT) {
 		HW_MMU_FaultAddrRead(pDevContext->dwDSPMmuBase, &faultAddr);
+		DBG_Trace(DBG_LEVEL1, "WMD_DEH_Notify: DSP_MMUFAULT, fault "
+			 "address = 0x%x\n", faultAddr);
 		retVal = true;
 	}
 	return retVal;

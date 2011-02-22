@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Global MEM constants and types, shared between WCD and WMD.
- *
  * Copyright (C) 2008 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,20 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== memdefs.h ========
+ *  Purpose:
+ *      Global MEM constants and types, shared between WSX, WCD, and WMD.
+ *
+ *! Revision History:
+ *! ================
+ *! 28-Aug-2001 ag:  Added MEM_[SET][GET]VIRTUALSEGID.
+ *! 10-Aug-1999 kc:  Based on wsx-c18.
+ *! 15-Nov-1996 gp:  Renamed from wsxmem.h and moved to kwinos.
+ *! 21-Aug-1996 cr:  Created from mem.h.
  */
 
 #ifndef MEMDEFS_
@@ -33,5 +45,8 @@
 #define MEM_SETVIRTUALSEGID     0x10000000
 #define MEM_GETVIRTUALSEGID     0x20000000
 #define MEM_MASKVIRTUALSEGID    (MEM_SETVIRTUALSEGID | MEM_GETVIRTUALSEGID)
+
+#define TO_VIRTUAL_UNCACHED(x) x
+#define INTREG_TO_VIRTUAL_UNCACHED(x) x
 
 #endif				/* MEMDEFS_ */

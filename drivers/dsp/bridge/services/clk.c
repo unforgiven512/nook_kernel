@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Clock and Timer services.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,24 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+/*
+ *  ======== clk.c ========
+ *  Purpose:
+ *      Clock and Timer services.
+ *
+ *  Public Functions:
+ *      CLK_Exit
+ *      CLK_Init
+ *	CLK_Enable
+ *	CLK_Disable
+ *	CLK_GetRate
+ *	CLK_Set_32KHz
+ *! Revision History:
+ *! ================
+ *! 08-May-2007 rg: moved all clock functions from sync module.
+ *		    And added CLK_Set_32KHz, CLK_Set_SysClk.
  */
 
 /*  ----------------------------------- Host OS */
@@ -38,13 +54,7 @@
 
 typedef volatile unsigned long  REG_UWORD32;
 
-#define OMAP_SSI_OFFSET			0x58000
-#define OMAP_SSI_SIZE			0x1000
-#define OMAP_SSI_SYSCONFIG_OFFSET	0x10
-
-#define SSI_AUTOIDLE			(1 << 0)
-#define SSI_SIDLE_SMARTIDLE		(2 << 3)
-#define SSI_MIDLE_NOIDLE		(1 << 12)
+#define SSI_BASE	0x48058000
 
 struct SERVICES_Clk_t {
 	struct clk *clk_handle;
@@ -57,6 +67,7 @@ struct SERVICES_Clk_t {
  * enumerations needs to be fixed in the array as well */
 static struct SERVICES_Clk_t SERVICES_Clks[] = {
 	{NULL, "iva2_ck", -1},
+	{NULL, "mailboxes_ick", -1},
 	{NULL, "gpt5_fck", -1},
 	{NULL, "gpt5_ick", -1},
 	{NULL, "gpt6_fck", -1},
@@ -65,8 +76,8 @@ static struct SERVICES_Clk_t SERVICES_Clks[] = {
 	{NULL, "gpt7_ick", -1},
 	{NULL, "gpt8_fck", -1},
 	{NULL, "gpt8_ick", -1},
-	{NULL, "wdt3_fck", 3},
-	{NULL, "wdt3_ick", 3},
+	{NULL, "wdt_fck", 3},
+	{NULL, "wdt_ick", 3},
 	{NULL, "mcbsp_fck", 1},
 	{NULL, "mcbsp_ick", 1},
 	{NULL, "mcbsp_fck", 2},
@@ -89,8 +100,6 @@ struct TIMER_OBJECT {
 	struct timer_list timer;
 };
 
-spinlock_t clk_lock;
-
 /*  ----------------------------------- Globals */
 #if GT_TRACE
 static struct GT_Mask CLK_debugMask = { NULL, NULL };	/* GT trace variable */
@@ -105,6 +114,7 @@ void CLK_Exit(void)
 {
 	int i = 0;
 
+	GT_0trace(CLK_debugMask, GT_5CLASS, "CLK_Exit\n");
 	/* Relinquish the clock handles */
 	while (i < SERVICESCLK_NOT_DEFINED) {
 		if (SERVICES_Clks[i].clk_handle)
@@ -127,8 +137,7 @@ bool CLK_Init(void)
 	struct clk *clk_handle;
 	int i = 0;
 	GT_create(&CLK_debugMask, "CK");	/* CK for CLK */
-
-	spin_lock_init(&clk_lock);
+	GT_0trace(CLK_debugMask, GT_5CLASS, "CLK_Init\n");
 
 	dspbridge_device.dev.bus = &platform_bus_type;
 
@@ -141,10 +150,18 @@ bool CLK_Init(void)
 			     SERVICES_Clks[i].clk_name);
 
 		if (!clk_handle) {
-			pr_err("%s: failed to get clk handle %s, dev id = %d\n",
-				  __func__, SERVICES_Clks[i].clk_name,
+			GT_2trace(CLK_debugMask, GT_7CLASS,
+				  "CLK_Init: failed to get Clk handle %s, "
+				  "CLK dev id = %d\n",
+				  SERVICES_Clks[i].clk_name,
 				  SERVICES_Clks[i].id);
 			/* should we fail here?? */
+		} else {
+			GT_2trace(CLK_debugMask, GT_7CLASS,
+				  "CLK_Init: PASS and Clk handle %s, "
+				  "CLK dev id = %d\n",
+				  SERVICES_Clks[i].clk_name,
+				  SERVICES_Clks[i].id);
 		}
 		SERVICES_Clks[i].clk_handle = clk_handle;
 		i++;
@@ -163,39 +180,23 @@ DSP_STATUS CLK_Enable(IN enum SERVICES_ClkId clk_id)
 {
 	DSP_STATUS status = DSP_SOK;
 	struct clk *pClk;
-	s32 clk_use_cnt;
 
 	DBC_Require(clk_id < SERVICESCLK_NOT_DEFINED);
+	GT_2trace(CLK_debugMask, GT_6CLASS, "CLK_Enable: CLK %s, "
+		"CLK dev id = %d\n", SERVICES_Clks[clk_id].clk_name,
+		SERVICES_Clks[clk_id].id);
 
 	pClk = SERVICES_Clks[clk_id].clk_handle;
 	if (pClk) {
-		spin_lock_bh(&clk_lock);
-
-		clk_use_cnt = CLK_Get_UseCnt(clk_id);
-
-		if (clk_use_cnt == -1) {
-			pr_err("%s: failed to get CLK Use count for CLK %s,"
-				"CLK dev id = %d\n", __func__,
-				SERVICES_Clks[clk_id].clk_name,
-				SERVICES_Clks[clk_id].id);
-		} else if (clk_use_cnt >= 1) {
-			pr_debug("%s: CLK %s,"
-				"CLK dev id= %d is already enabled\n",
-				__func__,
-				SERVICES_Clks[clk_id].clk_name,
-				SERVICES_Clks[clk_id].id);
-			spin_unlock_bh(&clk_lock);
-			return status;
-		}
-
-		if (clk_enable(pClk)) {
+		if (clk_enable(pClk) == 0x0) {
+			/* Success ? */
+		} else {
 			pr_err("CLK_Enable: failed to Enable CLK %s, "
 					"CLK dev id = %d\n",
 					SERVICES_Clks[clk_id].clk_name,
 					SERVICES_Clks[clk_id].id);
 			status = DSP_EFAIL;
 		}
-		spin_unlock_bh(&clk_lock);
 	} else {
 		pr_err("CLK_Enable: failed to get CLK %s, CLK dev id = %d\n",
 					SERVICES_Clks[clk_id].clk_name,
@@ -223,14 +224,19 @@ DSP_STATUS CLK_Set_32KHz(IN enum SERVICES_ClkId clk_id)
 	DSP_STATUS status = DSP_SOK;
 	struct clk *pClk;
 	struct clk *pClkParent;
-	pClkParent =  SERVICES_Clks[SERVICESCLK_sys_32k_ck].clk_handle;
+	enum SERVICES_ClkId sys_32k_id = SERVICESCLK_sys_32k_ck;
+	pClkParent =  SERVICES_Clks[sys_32k_id].clk_handle;
 
 	DBC_Require(clk_id < SERVICESCLK_NOT_DEFINED);
-
+	GT_2trace(CLK_debugMask, GT_6CLASS, "CLK_Set_32KHz: CLK %s, "
+		"CLK dev id = %d is setting to 32KHz \n",
+		SERVICES_Clks[clk_id].clk_name,
+		SERVICES_Clks[clk_id].id);
 	pClk = SERVICES_Clks[clk_id].clk_handle;
 	if (pClk) {
 		if (!(clk_set_parent(pClk, pClkParent) == 0x0)) {
-			pr_err("%s: failed for %s, dev id = %d\n", __func__,
+		       GT_2trace(CLK_debugMask, GT_7CLASS, "CLK_Set_32KHz: "
+				"Failed to set to 32KHz %s, CLK dev id = %d\n",
 				SERVICES_Clks[clk_id].clk_name,
 				SERVICES_Clks[clk_id].id);
 			status = DSP_EFAIL;
@@ -252,10 +258,12 @@ DSP_STATUS CLK_Disable(IN enum SERVICES_ClkId clk_id)
 	s32 clkUseCnt;
 
 	DBC_Require(clk_id < SERVICESCLK_NOT_DEFINED);
+	GT_2trace(CLK_debugMask, GT_6CLASS, "CLK_Disable: CLK %s, "
+		"CLK dev id = %d\n", SERVICES_Clks[clk_id].clk_name,
+		SERVICES_Clks[clk_id].id);
 
 	pClk = SERVICES_Clks[clk_id].clk_handle;
 
-	spin_lock_bh(&clk_lock);
 	clkUseCnt = CLK_Get_UseCnt(clk_id);
 	if (clkUseCnt == -1) {
 		pr_err("CLK_Disable: failed to get CLK Use count for CLK %s,"
@@ -263,7 +271,10 @@ DSP_STATUS CLK_Disable(IN enum SERVICES_ClkId clk_id)
 				SERVICES_Clks[clk_id].clk_name,
 				SERVICES_Clks[clk_id].id);
 	} else if (clkUseCnt == 0) {
-		spin_unlock_bh(&clk_lock);
+		GT_2trace(CLK_debugMask, GT_4CLASS, "CLK_Disable: CLK %s,"
+				"CLK dev id= %d is already disabled\n",
+				SERVICES_Clks[clk_id].clk_name,
+				SERVICES_Clks[clk_id].id);
 		return status;
 	}
 	if (clk_id == SERVICESCLK_ssi_ick)
@@ -278,8 +289,6 @@ DSP_STATUS CLK_Disable(IN enum SERVICES_ClkId clk_id)
 					SERVICES_Clks[clk_id].id);
 			status = DSP_EFAIL;
 		}
-
-	spin_unlock_bh(&clk_lock);
 	return status;
 }
 
@@ -299,6 +308,9 @@ DSP_STATUS CLK_GetRate(IN enum SERVICES_ClkId clk_id, u32 *speedKhz)
 	DBC_Require(clk_id < SERVICESCLK_NOT_DEFINED);
 	*speedKhz = 0x0;
 
+	GT_2trace(CLK_debugMask, GT_7CLASS, "CLK_GetRate: CLK %s, "
+		"CLK dev Id = %d \n", SERVICES_Clks[clk_id].clk_name,
+		SERVICES_Clks[clk_id].id);
 	pClk = SERVICES_Clks[clk_id].clk_handle;
 	if (pClk) {
 		clkSpeedHz = clk_get_rate(pClk);
@@ -307,9 +319,10 @@ DSP_STATUS CLK_GetRate(IN enum SERVICES_ClkId clk_id, u32 *speedKhz)
 			  "CLK_GetRate: clkSpeedHz = %d , "
 			 "speedinKhz=%d\n", clkSpeedHz, *speedKhz);
 	} else {
-		pr_err("%s: failed to get %s, dev Id = %d\n", __func__,
-						SERVICES_Clks[clk_id].clk_name,
-						SERVICES_Clks[clk_id].id);
+		GT_2trace(CLK_debugMask, GT_7CLASS,
+			 "CLK_GetRate: failed to get CLK %s, "
+			 "CLK dev Id = %d\n", SERVICES_Clks[clk_id].clk_name,
+			 SERVICES_Clks[clk_id].id);
 		status = DSP_EFAIL;
 	}
 	return status;
@@ -325,12 +338,12 @@ s32 CLK_Get_UseCnt(IN enum SERVICES_ClkId clk_id)
 	pClk = SERVICES_Clks[clk_id].clk_handle;
 
 	if (pClk) {
-		/* FIXME: usecount shouldn't be used */
-		useCount = pClk->usecount;
+		useCount =  pClk->usecount; /* FIXME: usecount shouldn't be used */
 	} else {
-		pr_err("%s: failed to get %s, dev Id = %d\n", __func__,
-						SERVICES_Clks[clk_id].clk_name,
-						SERVICES_Clks[clk_id].id);
+		GT_2trace(CLK_debugMask, GT_7CLASS,
+			 "CLK_GetRate: failed to get CLK %s, "
+			 "CLK dev Id = %d\n", SERVICES_Clks[clk_id].clk_name,
+			 SERVICES_Clks[clk_id].id);
 		status = DSP_EFAIL;
 	}
 	return useCount;
@@ -338,27 +351,19 @@ s32 CLK_Get_UseCnt(IN enum SERVICES_ClkId clk_id)
 
 void SSI_Clk_Prepare(bool FLAG)
 {
-	void __iomem *ssi_base;
-	unsigned int value;
-
-	ssi_base = ioremap(L4_34XX_BASE + OMAP_SSI_OFFSET, OMAP_SSI_SIZE);
-	if (!ssi_base) {
-		pr_err("%s: error, SSI not configured\n", __func__);
-		return;
-	}
+	u32 ssi_sysconfig;
+	ssi_sysconfig = __raw_readl((SSI_BASE) + 0x10);
 
 	if (FLAG) {
 		/* Set Autoidle, SIDLEMode to smart idle, and MIDLEmode to
 		 * no idle
 		 */
-		value = SSI_AUTOIDLE | SSI_SIDLE_SMARTIDLE | SSI_MIDLE_NOIDLE;
+		ssi_sysconfig = 0x1011;
 	} else {
 		/* Set Autoidle, SIDLEMode to forced idle, and MIDLEmode to
 		 * forced idle
 		 */
-		value = SSI_AUTOIDLE;
+		ssi_sysconfig = 0x1;
 	}
-
-	__raw_writel(value, ssi_base + OMAP_SSI_SYSCONFIG_OFFSET);
-	iounmap(ssi_base);
+	__raw_writel((u32)ssi_sysconfig, SSI_BASE + 0x10);
 }

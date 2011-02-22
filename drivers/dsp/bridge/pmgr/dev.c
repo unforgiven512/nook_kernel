@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Implementation of Bridge Mini-driver device operations.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,104 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== dev.c ========
+ *  Description:
+ *      Implementation of 'Bridge Mini-driver device operations.
+ *
+ *  Public Functions:
+ *      DEV_BrdWriteFxn
+ *      DEV_CreateDevice
+ *      DEV_Create2
+ *      DEV_Destroy2
+ *      DEV_DestroyDevice
+ *      DEV_GetChnlMgr
+ *      DEV_GetCmmMgr
+ *      DEV_GetCodMgr
+ *      DEV_GetDehMgr
+ *      DEV_GetDevNode
+ *      DEV_GetDSPWordSize
+ *      DEV_GetFirst
+ *      DEV_GetIntfFxns
+ *      DEV_GetIOMgr
+ *      DEV_GetNext
+ *      DEV_GetNodeManager
+ *      DEV_GetSymbol
+ *      DEV_GetWMDContext
+ *      DEV_Exit
+ *      DEV_Init
+ *      DEV_InsertProcObject
+ *      DEV_IsLocked
+ *      DEV_NotifyClient
+ *      DEV_RegisterNotify
+ *      DEV_ReleaseCodMgr
+ *      DEV_RemoveDevice
+ *      DEV_RemoveProcObject
+ *      DEV_SetChnlMgr
+ *      DEV_SetMsgMgr
+ *      DEV_SetLockOwner
+ *      DEV_StartDevice
+ *
+ *  Private Functions:
+ *      FxnNotImplemented
+ *      InitCodMgr
+ *      InsertDevObject
+ *      IsValidHandle
+ *      RemoveDevObject
+ *      StoreInterfaceFxns
+ *
+ *! Revision History:
+ *! ================
+ *! 03-Jan-2005 hn  Support for IVA DEH
+ *! 08-Mar-2004 sb  Added the Dynamic Memory Mapping feature
+ *! 09-Feb-2004 vp	Updated to support IVA.
+ *! 24-Feb-2003 swa PMGR Code review comments incorporated.
+ *! 29-Nov-2001 jeh Check for DSP_ENOTIMPL status of DEH create function.
+ *! 05-Nov-2001 kc  Added support for DEH module.
+ *! 05-Aug-2001 ag  Shared memory registration moved to WMD_IO_OnLoaded().
+ *! 11-Jul-2001 jeh Moved MGR_Create() from DSP_Init() to DEV_StartDevice().
+ *! 11-Apr-2001 rr: Removed CMM_RegisterGPPSMSeg.
+ *! 02-Apr-2001 rr: CHNL_Create failure is printed out.
+ *! 15-Jan-2001 jeh Removed call to IO_OnLoaded() from DEV_Create2().
+ *! 13-Feb-2001 kc: DSP/BIOS Bridge name update.
+ *! 15-Dec-2000 rr: Dev_Create2 returns error if NODE_CreateMgr fails.
+ *! 05-Dec-2000 jeh Moved IO_OnLoaded() to PROC_Load. Added DEV_SetMsgMgr.
+ *! 05-Dev-2000 ag  SM Heap for messaging registered via CMM_RegisterGPPSMSeg().
+ *!                 SM heap base and size currently taken from registry.
+ *! 29-Nov-2000 rr: Incorporated code review changes.
+ *! 17-Nov-2000 jeh Added calls to get IO manager (IO_Create), IO_OnLoaded().
+ *! 06-Oct-2000 rr: DEV_Destroy2 and DEV_Create2 added.
+ *! 02-Oct-2000 rr: DEV_GetNodeManager added.
+ *! 11-Aug-2000 ag: Added DEV_GetCmmMgr(), CMM_Init() & CMM_Exit().
+ *!                 Removed <dspbridge/std.h> & <stdwin.h>, added <dspbridge/dbtype.h>
+ *! 10-Aug-2000 rr: DEV_InsertProcObject/RemoveProcObject added.
+ *!                 DEV_Cleanup calls PROC_Detach if it is a matching process.
+ *! 27-Jul-2000 rr: DEV is in new directoy DEV and produces devlib.lib
+ *! 17-Jul-2000 rr: DRV Object holds the list of Dev Objects. DEV gets
+ *!                 the List and Next devices through DRV.
+ *!                 DEV object has a back pointer to DRV Object.
+ *! 06-Jun-2000 jeh Added DEV_GetSymbol().
+ *! 09-May-2000 rr: dwMemBase has index for multiple windows need.
+ *! 28-Feb-2000 rr: New GT Usage implemented.
+ *! 03-Feb-2000 rr: GT and Module init/exit Changes.(Done up front from
+ *!		    SERVICES)
+ *! 31-Jan-2000 rr: Comments changed after code review.
+ *! 21-Jan-2000 rr: windows.h, tchar.h, HMODULE removed. FreeLibrary replaced
+ *!                 with LDR_FreeModule
+ *! 17-Jan-2000 rr: CFG_Get/SetPrivateDword renamed to CFG_Get/SetDevObject.
+ *!                 StoreInterfaceFxns stores the new fxn WMD_BRD_SETSTATE.
+ *! 20-Nov-1999 ag: Actual uSMLength =  total - monitor offset.
+ *! 12-Nov-1999 rr: bIRQ and IRQAttrib taken from the struct CFG_HOSTRES.
+ *!		    dMemBase is added with offset for monitor taken from
+ *!		    registry.
+ *! 31-Oct-1999 ag: Added CHNL support.
+ *! 10-Sep-1999 rr: GT Enabled. DEV_Create will Load the Mini Driver and will
+ *!                 find its fxn table. Right now lot of things are hardcoded
+ *!                 as the REG is not ready.
+ *! 10-Jun-1996 rr: Created from WSX
  */
 
 /*  ----------------------------------- Host OS */
@@ -65,7 +161,7 @@
 /* The WMD device object: */
 struct DEV_OBJECT {
 	/* LST requires "link" to be first field!                        */
-	struct list_head link;		/* Link to next DEV_OBJECT.      */
+	struct LST_ELEM link;		/* Link to next DEV_OBJECT.      */
 	u32 devType;		/* Device Type */
 	u32 dwSignature;	/* Used for object validation.   */
 	struct CFG_DEVNODE *hDevNode;	/* Platform specific device id   */
@@ -115,6 +211,11 @@ u32 DEV_BrdWriteFxn(void *pArb, u32 ulDspAddr, void *pHostBuf,
 
 	DBC_Require(cRefs > 0);
 	DBC_Require(pHostBuf != NULL);	/* Required of BrdWrite(). */
+	GT_5trace(debugMask, GT_ENTER,
+		"Entered DEV_BrdWriteFxn, pArb: 0x%x\n\t\t"
+		"ulDspAddr: 0x%x\n\t\tpHostBuf: 0x%x\n \t\tulNumBytes:  0x%x\n"
+		"\t\tnMemSpace:  0x%x\n", pArb, ulDspAddr, pHostBuf,
+		ulNumBytes, nMemSpace);
 	if (IsValidHandle(pDevObject)) {
 		/* Require of BrdWrite() */
 		DBC_Assert(pDevObject->hWmdContext != NULL);
@@ -128,6 +229,8 @@ u32 DEV_BrdWriteFxn(void *pArb, u32 ulDspAddr, void *pHostBuf,
 			ulWritten = ulNumBytes;
 
 	}
+	GT_1trace(debugMask, GT_ENTER, "Exit DEV_BrdWriteFxn ulWritten: 0x%x\n",
+		  ulWritten);
 	return ulWritten;
 }
 
@@ -157,10 +260,17 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 	DBC_Require(pHostConfig != NULL);
 	DBC_Require(pDspConfig != NULL);
 
+	GT_5trace(debugMask, GT_ENTER,
+		  "Entered DEV_CreateDevice, phDevObject: 0x%x\n"
+		  "\t\tpstrWMDFileName:  0x%x\n\t\tpHostConfig:0x%x\n\t\t"
+		  "pDspConfig:  0x%x\n\t\tnhDevNode:  0x%x\n", phDevObject,
+		  pstrWMDFileName, pHostConfig, pDspConfig, hDevNode);
 	/*  Get the WMD interface functions*/
 	WMD_DRV_Entry(&pDrvFxns, pstrWMDFileName);
 	if (DSP_FAILED(CFG_GetObject((u32 *) &hDrvObject, REG_DRV_OBJECT))) {
 		/* don't propogate CFG errors from this PROC function */
+		GT_0trace(debugMask, GT_7CLASS,
+			  "Failed to get the DRV Object \n");
 		status = DSP_EFAIL;
 	}
 	/* Create the device object, and pass a handle to the WMD for
@@ -191,6 +301,8 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 			DBC_Assert(DSP_FAILED(status) || (pDevObject->
 				   hWmdContext != NULL));
 		} else {
+			GT_0trace(debugMask, GT_7CLASS,
+				  "DEV_Create: Out Of Memory");
 			status = DSP_EMEMORY;
 		}
 	}
@@ -215,8 +327,9 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 		} else {
 			ioMgrAttrs.dwSMBase = 0;
 			ioMgrAttrs.uSMLength = 0;
-			pr_err("%s: No memory reserved for shared structures\n",
-								__func__);
+			GT_0trace(debugMask, GT_7CLASS,
+				  "**There is no memory reserved for "
+				  "shared structures**\n");
 		}
 		status = CHNL_Create(&pDevObject->hChnlMgr, pDevObject,
 				    &mgrAttrs);
@@ -228,6 +341,11 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 		/* Create CMM mgr even if Msg Mgr not impl.  */
 		status = CMM_Create(&pDevObject->hCmmMgr,
 				   (struct DEV_OBJECT *)pDevObject, NULL);
+		if (DSP_FAILED(status)) {
+			GT_0trace(debugMask, GT_7CLASS,
+				  "DEV_Create: Failed to Create SM "
+				  "Manager\n");
+		}
 		/* Only create IO manager if we have a channel manager */
 		if (DSP_SUCCEEDED(status) && pDevObject->hChnlMgr) {
 			status = IO_Create(&pDevObject->hIOMgr, pDevObject,
@@ -242,6 +360,11 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 		/* Create DMM mgr .  */
 		status = DMM_Create(&pDevObject->hDmmMgr,
 				   (struct DEV_OBJECT *)pDevObject, NULL);
+		if (DSP_FAILED(status)) {
+			GT_0trace(debugMask, GT_7CLASS,
+				  "DEV_Create: Failed to Create DMM "
+				  "Manager\n");
+		}
 	}
 	/* Add the new DEV_Object to the global list: */
 	if (DSP_SUCCEEDED(status)) {
@@ -250,19 +373,23 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 	}
 	/* Create the Processor List */
 	if (DSP_SUCCEEDED(status)) {
-		pDevObject->procList = MEM_Calloc(sizeof(struct LST_LIST),
-			MEM_NONPAGED);
-		if (!(pDevObject->procList))
+		pDevObject->procList = LST_Create();
+		if (!(pDevObject->procList)) {
 			status = DSP_EFAIL;
-		else
-			INIT_LIST_HEAD(&pDevObject->procList->head);
+			GT_0trace(debugMask, GT_7CLASS, "DEV_Create: "
+				 "Failed to Create Proc List");
+		}
 	}
 	 /*  If all went well, return a handle to the dev object;
 	 *  else, cleanup and return NULL in the OUT parameter.  */
 	if (DSP_SUCCEEDED(status)) {
 		*phDevObject = pDevObject;
+		GT_1trace(debugMask, GT_1CLASS,
+			 "DEV_CreateDevice Succeeded \nDevObject "
+			 "0x%x\n", pDevObject);
 	} else {
-		kfree(pDevObject->procList);
+		if (pDevObject && pDevObject->procList)
+			LST_Delete(pDevObject->procList);
 
 		if (pDevObject && pDevObject->hCodMgr)
 			COD_Delete(pDevObject->hCodMgr);
@@ -274,8 +401,10 @@ DSP_STATUS DEV_CreateDevice(OUT struct DEV_OBJECT **phDevObject,
 			MEM_FreeObject(pDevObject);
 
 		*phDevObject = NULL;
+		GT_0trace(debugMask, GT_7CLASS, "DEV_CreateDevice Failed\n");
 	}
-
+	GT_1trace(debugMask, GT_1CLASS, "Exiting DEV_Create: DevObject 0x%x\n",
+		 *phDevObject);
 	DBC_Ensure((DSP_SUCCEEDED(status) && IsValidHandle(*phDevObject)) ||
 		  (DSP_FAILED(status) && !*phDevObject));
 	return status;
@@ -296,14 +425,23 @@ DSP_STATUS DEV_Create2(struct DEV_OBJECT *hDevObject)
 	DBC_Require(cRefs > 0);
 	DBC_Require(IsValidHandle(hDevObject));
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Entered DEV_Create2, hDevObject: 0x%x\n", hDevObject);
 	/* There can be only one Node Manager per DEV object */
 	DBC_Assert(!pDevObject->hNodeMgr);
 	status = NODE_CreateMgr(&pDevObject->hNodeMgr, hDevObject);
-	if (DSP_FAILED(status))
+	if (DSP_FAILED(status)) {
+		GT_1trace(debugMask, GT_7CLASS,
+			 "DEV_Create2: NODE_CreateMgr failed, "
+			 "0x%x!\n", status);
 		pDevObject->hNodeMgr = NULL;
-
+		GT_0trace(debugMask, GT_7CLASS, "DEV_Create2: Failed!!\n");
+	}
 	DBC_Ensure((DSP_SUCCEEDED(status) && pDevObject->hNodeMgr != NULL)
 		   || (DSP_FAILED(status) && pDevObject->hNodeMgr == NULL));
+	GT_2trace(debugMask, GT_ENTER,
+		  "Exiting DEV_Create2, hNodeMgr:  0x%x, status:"
+		  " 0x%x\n", pDevObject->hNodeMgr, status);
 	return status;
 }
 
@@ -320,6 +458,9 @@ DSP_STATUS DEV_Destroy2(struct DEV_OBJECT *hDevObject)
 	DBC_Require(cRefs > 0);
 	DBC_Require(IsValidHandle(hDevObject));
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Entered DEV_Destroy2, hDevObject: 0x%x\n",
+		 hDevObject);
 	if (pDevObject->hNodeMgr) {
 		if (DSP_FAILED(NODE_DeleteMgr(pDevObject->hNodeMgr)))
 			status = DSP_EFAIL;
@@ -327,9 +468,14 @@ DSP_STATUS DEV_Destroy2(struct DEV_OBJECT *hDevObject)
 			pDevObject->hNodeMgr = NULL;
 
 	}
+	if (DSP_FAILED(status))
+		GT_0trace(debugMask, GT_7CLASS, "DEV_Destroy2 failed!!\n");
 
 	DBC_Ensure((DSP_SUCCEEDED(status) && pDevObject->hNodeMgr == NULL) ||
 		  DSP_FAILED(status));
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exiting DEV_Destroy2, hNodeMgr: 0x%x, status"
+		 " = 0x%x\n", pDevObject->hNodeMgr, status);
 	return status;
 }
 
@@ -346,6 +492,8 @@ DSP_STATUS DEV_DestroyDevice(struct DEV_OBJECT *hDevObject)
 
 	DBC_Require(cRefs > 0);
 
+	GT_1trace(debugMask, GT_ENTER, "Entered DEV_DestroyDevice, hDevObject: "
+		 "0x%x\n", hDevObject);
 	if (IsValidHandle(hDevObject)) {
 		if (pDevObject->hCodMgr) {
 			COD_Delete(pDevObject->hCodMgr);
@@ -389,15 +537,17 @@ DSP_STATUS DEV_DestroyDevice(struct DEV_OBJECT *hDevObject)
 
 		/* Call the driver's WMD_DEV_Destroy() function: */
 		/* Require of DevDestroy */
-		if (pDevObject->hWmdContext) {
+		if(pDevObject->hWmdContext) {
 			status = (*pDevObject->intfFxns.pfnDevDestroy)
 				(pDevObject->hWmdContext);
 			pDevObject->hWmdContext = NULL;
 		} else
 			status = DSP_EFAIL;
 		if (DSP_SUCCEEDED(status)) {
-			kfree(pDevObject->procList);
-			pDevObject->procList = NULL;
+			if (pDevObject->procList) {
+				LST_Delete(pDevObject->procList);
+				pDevObject->procList = NULL;
+			}
 
 			/* Remove this DEV_Object from the global list: */
 			DRV_RemoveDevObject(pDevObject->hDrvObject, pDevObject);
@@ -408,9 +558,11 @@ DSP_STATUS DEV_DestroyDevice(struct DEV_OBJECT *hDevObject)
 			pDevObject = NULL;
 		}
 	} else {
+		GT_0trace(debugMask, GT_7CLASS, "DEV_Destroy: Invlaid handle");
 		status = DSP_EHANDLE;
 	}
-
+	GT_1trace(debugMask, GT_ENTER, "Exit DEV_destroy: status 0x%x\n",
+		 status);
 	return status;
 }
 
@@ -429,13 +581,20 @@ DSP_STATUS DEV_GetChnlMgr(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phMgr != NULL);
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetChnlMgr, hDevObject: 0x%x\n\t"
+		 "\tphMgr: 0x%x\n", hDevObject, phMgr);
 	if (IsValidHandle(hDevObject)) {
 		*phMgr = pDevObject->hChnlMgr;
 	} else {
 		*phMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetChnlMgr: Invalid handle");
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetChnlMgr: status 0x%x\t\n hMgr: "
+		 "0x%x\n", status, *phMgr);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phMgr != NULL) &&
 		  (*phMgr == NULL)));
 	return status;
@@ -455,14 +614,20 @@ DSP_STATUS DEV_GetCmmMgr(struct DEV_OBJECT *hDevObject,
 
 	DBC_Require(cRefs > 0);
 	DBC_Require(phMgr != NULL);
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetCmmMgr, hDevObject:  0x%x\n\t"
+		 "\tphMgr:  0x%x\n", hDevObject, phMgr);
 	if (IsValidHandle(hDevObject)) {
 		*phMgr = pDevObject->hCmmMgr;
 	} else {
 		*phMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetCmmMgr: Invalid handle");
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetCmmMgr: status 0x%x\t\nhMgr: "
+		 "0x%x\n", status, *phMgr);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phMgr != NULL) &&
 		  (*phMgr == NULL)));
 	return status;
@@ -483,13 +648,19 @@ DSP_STATUS DEV_GetDmmMgr(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phMgr != NULL);
 
+	GT_2trace(debugMask, GT_ENTER, "Entered DEV_GetDmmMgr, hDevObject: "
+		 "0x%x\n\t\tphMgr: 0x%x\n", hDevObject, phMgr);
 	if (IsValidHandle(hDevObject)) {
 		*phMgr = pDevObject->hDmmMgr;
 	} else {
 		*phMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetDmmMgr: Invalid handle");
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetDmmMgr: status 0x%x\t\n hMgr: "
+		 "0x%x\n", status, *phMgr);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phMgr != NULL) &&
 		  (*phMgr == NULL)));
 	return status;
@@ -509,13 +680,21 @@ DSP_STATUS DEV_GetCodMgr(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phCodMgr != NULL);
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetCodMgr, hDevObject: 0x%x\n\t\t"
+		 "phCodMgr: 0x%x\n", hDevObject, phCodMgr);
 	if (IsValidHandle(hDevObject)) {
 		*phCodMgr = pDevObject->hCodMgr;
 	} else {
 		*phCodMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_1trace(debugMask, GT_7CLASS,
+			 "DEV_GetCodMgr, invalid handle:  0x%x\n",
+			 hDevObject);
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetCodMgr: status 0x%x\t\n hCodMgr:"
+		 " 0x%x\n", status, *phCodMgr);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phCodMgr != NULL) &&
 		  (*phCodMgr == NULL)));
 	return status;
@@ -537,6 +716,8 @@ DSP_STATUS DEV_GetDehMgr(struct DEV_OBJECT *hDevObject,
 	} else {
 		*phDehMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetDehMgr: Invalid handle");
 	}
 	return status;
 }
@@ -555,13 +736,20 @@ DSP_STATUS DEV_GetDevNode(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phDevNode != NULL);
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetDevNode, hDevObject: 0x%x\n\t"
+		 "\tphDevNode: 0x%x\n", hDevObject, phDevNode);
 	if (IsValidHandle(hDevObject)) {
 		*phDevNode = pDevObject->hDevNode;
 	} else {
 		*phDevNode = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetDevNode: Invalid handle");
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetDevNode: status 0x%x\t\nhDevNode:"
+		 "0x%x\n", status, *phDevNode);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phDevNode != NULL) &&
 		  (*phDevNode == NULL)));
 	return status;
@@ -599,13 +787,19 @@ DSP_STATUS DEV_GetIntfFxns(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(ppIntfFxns != NULL);
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetIntfFxns, hDevObject: 0x%x\n\t"
+		 "\tppIntfFxns: 0x%x\n", hDevObject, ppIntfFxns);
 	if (IsValidHandle(hDevObject)) {
 		*ppIntfFxns = &pDevObject->intfFxns;
 	} else {
 		*ppIntfFxns = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			  "DEV_GetIntDxns: Invalid handle");
 	}
-
+	GT_2trace(debugMask, GT_ENTER, "Exit DEV_GetIntFxns: status 0x%x\t\n"
+		 "ppIntFxns: 0x%x\n", status, *ppIntfFxns);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((ppIntfFxns != NULL) &&
 		  (*ppIntfFxns == NULL)));
 	return status;
@@ -628,6 +822,7 @@ DSP_STATUS DEV_GetIOMgr(struct DEV_OBJECT *hDevObject,
 	} else {
 		*phIOMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS, "DEV_GetIOMgr: Invalid handle");
 	}
 
 	return status;
@@ -679,13 +874,21 @@ DSP_STATUS DEV_GetNodeManager(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(phNodeMgr != NULL);
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetNodeManager, hDevObject: 0x%x"
+		 "\n\t\tphNodeMgr: 0x%x\n", hDevObject, phNodeMgr);
 	if (IsValidHandle(hDevObject)) {
 		*phNodeMgr = pDevObject->hNodeMgr;
 	} else {
 		*phNodeMgr = NULL;
 		status = DSP_EHANDLE;
+		GT_1trace(debugMask, GT_7CLASS,
+			 "DEV_GetNodeManager, invalid handle: 0x"
+			 "%x\n", hDevObject);
 	}
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetNodeManager: status 0x%x\t\nhMgr:"
+		 " 0x%x\n", status, *phNodeMgr);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phNodeMgr != NULL) &&
 		  (*phNodeMgr == NULL)));
 	return status;
@@ -703,13 +906,24 @@ DSP_STATUS DEV_GetSymbol(struct DEV_OBJECT *hDevObject,
 	DBC_Require(cRefs > 0);
 	DBC_Require(pstrSym != NULL && pulValue != NULL);
 
-	status = DEV_GetCodMgr(hDevObject, &hCodMgr);
-	if (hCodMgr)
-		status = COD_GetSymValue(hCodMgr, (char *)pstrSym,
-			 pulValue);
-	else
+	GT_3trace(debugMask, GT_ENTER,
+		 "Entered DEV_GetSymbol, hDevObject: 0x%x\n\t\t"
+		 "pstrSym: 0x%x\n\t\tpulValue: 0x%x\n", hDevObject, pstrSym,
+		 pulValue);
+	if (IsValidHandle(hDevObject)) {
+		status = DEV_GetCodMgr(hDevObject, &hCodMgr);
+		if (DSP_SUCCEEDED(status)) {
+			DBC_Assert(hCodMgr != NULL);
+			status = COD_GetSymValue(hCodMgr, (char *)pstrSym,
+				 pulValue);
+		}
+	} else {
 		status = DSP_EHANDLE;
-
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetSymbol: Invalid handle");
+	}
+	GT_2trace(debugMask, GT_ENTER, "Exit DEV_GetSymbol: status 0x%x\t\n"
+		 "hWmdContext: 0x%x\n", status, *pulValue);
 	return status;
 }
 
@@ -726,14 +940,21 @@ DSP_STATUS DEV_GetWMDContext(struct DEV_OBJECT *hDevObject,
 
 	DBC_Require(cRefs > 0);
 	DBC_Require(phWmdContext != NULL);
-
+	GT_2trace(debugMask, GT_ENTER,
+		  "Entered DEV_GetWMDContext, hDevObject: 0x%x\n"
+		  "\t\tphWmdContext: 0x%x\n", hDevObject, phWmdContext);
 	if (IsValidHandle(hDevObject)) {
 		*phWmdContext = pDevObject->hWmdContext;
 	} else {
 		*phWmdContext = NULL;
 		status = DSP_EHANDLE;
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_GetWMDContext: Invalid handle");
 	}
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Exit DEV_GetWMDContext: status 0x%x\t\n"
+		 "hWmdContext: 0x%x\n", status, *phWmdContext);
 	DBC_Ensure(DSP_SUCCEEDED(status) || ((phWmdContext != NULL) &&
 		  (*phWmdContext == NULL)));
 	return status;
@@ -755,6 +976,9 @@ void DEV_Exit(void)
 		CMM_Exit();
 		DMM_Exit();
 	}
+
+	GT_1trace(debugMask, GT_5CLASS, "Entered DEV_Exit, ref count: 0x%x\n",
+		 cRefs);
 
 	DBC_Ensure(cRefs >= 0);
 }
@@ -793,6 +1017,10 @@ bool DEV_Init(void)
 	if (fRetval)
 		cRefs++;
 
+
+	GT_1trace(debugMask, GT_5CLASS, "Entered DEV_Init, ref count: 0x%x\n",
+		 cRefs);
+
 	DBC_Ensure((fRetval && (cRefs > 0)) || (!fRetval && (cRefs >= 0)));
 
 	return fRetval;
@@ -808,12 +1036,15 @@ DSP_STATUS DEV_NotifyClients(struct DEV_OBJECT *hDevObject, u32 ulStatus)
 	DSP_STATUS status = DSP_SOK;
 
 	struct DEV_OBJECT *pDevObject = hDevObject;
-	void *hProcObject;
+	DSP_HPROCESSOR hProcObject;
 
-	for (hProcObject = (void *)LST_First(pDevObject->procList);
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_NotifyClients, hDevObject: 0x%x\n"
+		 "\t\tulStatus: 0x%x\n", hDevObject, ulStatus);
+	for (hProcObject = (DSP_HPROCESSOR)LST_First(pDevObject->procList);
 		hProcObject != NULL;
-		hProcObject = (void *)LST_Next(pDevObject->procList,
-					(struct list_head *)hProcObject))
+		hProcObject = (DSP_HPROCESSOR)LST_Next(pDevObject->procList,
+						(struct LST_ELEM *)hProcObject))
 		PROC_NotifyClients(hProcObject, (u32) ulStatus);
 
 	return status;
@@ -828,6 +1059,8 @@ DSP_STATUS DEV_RemoveDevice(struct CFG_DEVNODE *hDevNode)
 	DSP_STATUS status = DSP_SOK;
 	struct DEV_OBJECT *pDevObject;
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Entered DEV_RemoveDevice, hDevNode:  0x%x\n", hDevNode);
 	/* Retrieve the device object handle originaly stored with
 	 * the DevNode: */
 	status = CFG_GetDevObject(hDevNode, (u32 *)&hDevObject);
@@ -836,8 +1069,14 @@ DSP_STATUS DEV_RemoveDevice(struct CFG_DEVNODE *hDevNode)
 		pDevObject = (struct DEV_OBJECT *)hDevObject;
 		/* Destroy the device object. */
 		status = DEV_DestroyDevice(hDevObject);
+		if (DSP_SUCCEEDED(status)) {
+			/* Null out the handle stored with the DevNode. */
+			GT_0trace(debugMask, GT_1CLASS,
+				 "DEV_RemoveDevice, success");
+		}
 	}
-
+	GT_1trace(debugMask, GT_ENTER, "Exit DEV_RemoveDevice, status: 0x%x\n",
+		  status);
 	return status;
 }
 
@@ -853,11 +1092,16 @@ DSP_STATUS DEV_SetChnlMgr(struct DEV_OBJECT *hDevObject, struct CHNL_MGR *hMgr)
 
 	DBC_Require(cRefs > 0);
 
-	if (IsValidHandle(hDevObject))
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_SetChnlMgr, hDevObject: 0x%x\n\t"
+		 "\thMgr:0x%x\n", hDevObject, hMgr);
+	if (IsValidHandle(hDevObject)) {
 		pDevObject->hChnlMgr = hMgr;
-	else
+	} else {
 		status = DSP_EHANDLE;
-
+		GT_0trace(debugMask, GT_7CLASS,
+			 "DEV_SetChnlMgr, Invalid handle\n");
+	}
 	DBC_Ensure(DSP_FAILED(status) || (pDevObject->hChnlMgr == hMgr));
 	return status;
 }
@@ -871,7 +1115,9 @@ void DEV_SetMsgMgr(struct DEV_OBJECT *hDevObject, struct MSG_MGR *hMgr)
 {
 	DBC_Require(cRefs > 0);
 	DBC_Require(IsValidHandle(hDevObject));
-
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entered DEV_SetMsgMgr, hDevObject: 0x%x\n\t\t"
+		 "hMgr: 0x%x\n", hDevObject, hMgr);
 	hDevObject->hMsgMgr = hMgr;
 }
 
@@ -891,10 +1137,21 @@ DSP_STATUS DEV_StartDevice(struct CFG_DEVNODE *hDevNode)
 
 	DBC_Require(cRefs > 0);
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Entered DEV_StartDevice, hDevObject: 0x%x\n", hDevNode);
 		status = CFG_GetHostResources(hDevNode, &hostRes);
 		if (DSP_SUCCEEDED(status)) {
 			/* Get DSP resources of device from Registry: */
 			status = CFG_GetDSPResources(hDevNode, &dspRes);
+			if (DSP_FAILED(status)) {
+				GT_1trace(debugMask, GT_7CLASS,
+					 "Failed to get WMD DSP resources"
+					 " from registry: 0x%x ", status);
+			}
+		} else {
+			GT_1trace(debugMask, GT_7CLASS,
+				 "Failed to get WMD Host resources "
+				 "from registry: 0x%x ", status);
 		}
 	if (DSP_SUCCEEDED(status)) {
 		/* Given all resources, create a device object. */
@@ -905,14 +1162,26 @@ DSP_STATUS DEV_StartDevice(struct CFG_DEVNODE *hDevNode)
 			status = CFG_SetDevObject(hDevNode, (u32)hDevObject);
 			if (DSP_FAILED(status)) {
 				/* Clean up */
+				GT_1trace(debugMask, GT_7CLASS,
+					 "Failed to set DevObject in the "
+					 "Registry: 0x%x", status);
 				DEV_DestroyDevice(hDevObject);
 				hDevObject = NULL;
 			}
+		} else {
+			GT_1trace(debugMask, GT_7CLASS,
+				 "Failed to Create Device: 0x%x",
+				 status);
 		}
 	}
 	if (DSP_SUCCEEDED(status)) {
 		/* Create the Manager Object */
 		status = MGR_Create(&hMgrObject, hDevNode);
+	}
+	if (DSP_FAILED(status)) {
+		GT_1trace(debugMask, GT_7CLASS, "Failed to MGR object: 0x%x",
+			 status);
+		status = DSP_EFAIL;
 	}
 	if (DSP_FAILED(status)) {
 		if (hDevObject)
@@ -921,7 +1190,8 @@ DSP_STATUS DEV_StartDevice(struct CFG_DEVNODE *hDevNode)
 		/* Ensure the device extension is NULL */
 		CFG_SetDevObject(hDevNode, 0L);
 	}
-
+	GT_1trace(debugMask, GT_ENTER, "Exiting DEV_StartDevice status 0x%x\n",
+		 status);
 	return status;
 }
 
@@ -936,6 +1206,9 @@ DSP_STATUS DEV_StartDevice(struct CFG_DEVNODE *hDevNode)
  */
 static DSP_STATUS FxnNotImplemented(int arg, ...)
 {
+	DBG_Trace(DBG_LEVEL1,
+		 "WARNING: Calling a non-implemented WMD function.\n");
+
 	return DSP_ENOTIMPL;
 }
 
@@ -982,9 +1255,11 @@ static DSP_STATUS InitCodMgr(struct DEV_OBJECT *pDevObject)
 	DBC_Require(cRefs > 0);
 	DBC_Require(!IsValidHandle(pDevObject) ||
 		   (pDevObject->hCodMgr == NULL));
-
+	GT_1trace(debugMask, GT_ENTER, "Entering InitCodMgr pDevObject: 0x%x",
+		 pDevObject);
 	status = COD_Create(&pDevObject->hCodMgr, szDummyFile, NULL);
-
+	GT_1trace(debugMask, GT_ENTER, "Exiting InitCodMgr status 0x%x\n ",
+		 status);
 	return status;
 }
 
@@ -1014,6 +1289,9 @@ DSP_STATUS DEV_InsertProcObject(struct DEV_OBJECT *hDevObject,
 	DSP_STATUS status = DSP_SOK;
 	struct DEV_OBJECT *pDevObject = (struct DEV_OBJECT *)hDevObject;
 
+	GT_2trace(debugMask, GT_ENTER,
+		 "Entering DEV_InsetProcObject pProcObject 0x%x"
+		 "pDevObject 0x%x\n", hProcObject, hDevObject);
 	DBC_Require(cRefs > 0);
 	DBC_Require(IsValidHandle(pDevObject));
 	DBC_Require(hProcObject != 0);
@@ -1023,8 +1301,10 @@ DSP_STATUS DEV_InsertProcObject(struct DEV_OBJECT *hDevObject,
 		*pbAlreadyAttached = true;
 
 	/* Add DevObject to tail. */
-	LST_PutTail(pDevObject->procList, (struct list_head *)hProcObject);
+	LST_PutTail(pDevObject->procList, (struct LST_ELEM *)hProcObject);
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Exiting DEV_InsetProcObject status 0x%x\n", status);
 	DBC_Ensure(DSP_SUCCEEDED(status) && !LST_IsEmpty(pDevObject->procList));
 
 	return status;
@@ -1052,7 +1332,7 @@ DSP_STATUS DEV_RemoveProcObject(struct DEV_OBJECT *hDevObject,
 				     u32 hProcObject)
 {
 	DSP_STATUS status = DSP_EFAIL;
-	struct list_head *pCurElem;
+	struct LST_ELEM *pCurElem;
 	struct DEV_OBJECT *pDevObject = (struct DEV_OBJECT *)hDevObject;
 
 	DBC_Require(IsValidHandle(pDevObject));
@@ -1060,6 +1340,9 @@ DSP_STATUS DEV_RemoveProcObject(struct DEV_OBJECT *hDevObject,
 	DBC_Require(pDevObject->procList != NULL);
 	DBC_Require(!LST_IsEmpty(pDevObject->procList));
 
+	GT_1trace(debugMask, GT_ENTER,
+		 "Entering DEV_RemoveProcObject hDevObject "
+		 "0x%x\n", hDevObject);
 	/* Search list for pDevObject: */
 	for (pCurElem = LST_First(pDevObject->procList); pCurElem != NULL;
 	    pCurElem = LST_Next(pDevObject->procList, pCurElem)) {
@@ -1070,7 +1353,8 @@ DSP_STATUS DEV_RemoveProcObject(struct DEV_OBJECT *hDevObject,
 			break;
 		}
 	}
-
+	GT_1trace(debugMask, GT_ENTER, "DEV_RemoveProcObject returning 0x%x\n",
+		 status);
 	return status;
 }
 

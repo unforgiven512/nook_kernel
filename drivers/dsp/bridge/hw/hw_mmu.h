@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * MMU types and API declarations
- *
  * Copyright (C) 2007 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,6 +14,19 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+
+/*
+ *  ======== hw_mmu.h ========
+ *  Description:
+ *      MMU types and API declarations
+ *
+ *! Revision History:
+ *! ================
+ *! 19-Apr-2004 sb  Moved & renamed endianness, page size, element size
+		    TLBAdd takes in MMUMapAttrs instead of separate arguments
+ *! 08-Mar-2004 sb  Added the Page Table management APIs
+ *! 16 Feb 2003 sb: Initial version
+ */
 #ifndef __HW_MMU_H
 #define __HW_MMU_H
 
@@ -87,7 +98,8 @@ extern HW_STATUS HW_MMU_TLBAdd(const void __iomem *baseAddress,
 				  u32	   pageSize,
 				  u32	    entryNum,
 				  struct HW_MMUMapAttrs_t *mapAttrs,
-				  s8 preservedBit, s8 validBit);
+				  enum HW_SetClear_t    preservedBit,
+				  enum HW_SetClear_t    validBit);
 
 
 /* For PTEs */

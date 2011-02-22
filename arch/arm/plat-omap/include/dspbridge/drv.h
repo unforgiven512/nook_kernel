@@ -3,10 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * DRV Resource allocation module. Driver Object gets Created
- * at the time of Loading. It holds the List of Device Objects
- * in the system.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,6 +12,50 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== drv.h ========
+ *  Purpose:
+ *      DRV Resource allocation module. Driver Object gets Created
+ *      at the time of Loading. It holds the List of Device Objects
+ *      in the Syste,
+ *
+ *  Public Functions:
+ *      DRV_Create
+ *      DRV_Destroy
+ *      DRV_Exit
+ *      DRV_GetDevObject
+ *      DRV_GetDevExtension
+ *      DRV_GetFirstDevObject
+ *      DRV_GetNextDevObject
+ *      DRV_GetNextDevExtension
+ *      DRV_Init
+ *      DRV_InsertDevObject
+ *      DRV_RemoveDevObject
+ *      DRV_RequestResources
+ *      DRV_ReleaseResources
+ *
+ *! Revision History
+ *! ================
+ *! 10-Feb-2004 vp:  Added OMAP24xx specific definitions.
+ *! 14-Aug-2000 rr:  Cleaned up.
+ *! 27-Jul-2000 rr:  DRV_RequestResources split into two(Request and Release)
+ *!                  Device extension created to hold the DevNodeString.
+ *! 17-Jul-2000 rr:  Driver Object holds the list of Device Objects.
+ *!                  Added DRV_Create, DRV_Destroy, DRV_GetDevObject,
+ *!                  DRV_GetFirst/NextDevObject, DRV_Insert/RemoveDevObject.
+ *! 12-Nov-1999 rr:  New Flag defines for DRV_ASSIGN and DRV_RELEASE
+ *! 25-Oct-1999 rr:  Resource Structure removed.
+ *! 15-Oct-1999 rr:  New Resource structure created.
+ *! 05-Oct-1999 rr:  Added DRV_RequestResources
+ *!                  Removed fxn'sDRV_RegisterMiniDriver(),
+ *!		     DRV_UnRegisterMiniDriver()
+ *!                  Removed Structures DSP_DRIVER & DRV_EXTENSION.
+ *!
+ *! 24-Sep-1999 rr:  Added DRV_EXTENSION and DSP_DRIVER structures.
+ *!
  */
 
 #ifndef DRV_
@@ -69,38 +109,38 @@
 #define OMAP_SYSC_BASE 0x48002000
 #define OMAP_SYSC_SIZE 0x1000
 
+#define OMAP_MBOX_BASE 0x48094000
+#define OMAP_MBOX_SIZE 0x1000
+
 #define OMAP_DMMU_BASE 0x5D000000
 #define OMAP_DMMU_SIZE 0x1000
-
-#define OMAP_WDT3_BASE 0x49030000
-#define OMAP_WDT3_SIZE 0x1000
 
 #define OMAP_PRCM_VDD1_DOMAIN 1
 #define OMAP_PRCM_VDD2_DOMAIN 2
 
+#ifndef RES_CLEANUP_DISABLE
 
 /* GPP PROCESS CLEANUP Data structures */
 
 /* New structure (member of process context) abstracts NODE resource info */
 struct NODE_RES_OBJECT {
-	void *hNode;
+	DSP_HNODE       hNode;
 	s32            nodeAllocated; /* Node status */
 	s32            heapAllocated; /* Heap status */
 	s32            streamsAllocated; /* Streams status */
 	struct NODE_RES_OBJECT         *next;
 } ;
 
-/* Used for DMM mapped memory accounting */
-struct DMM_MAP_OBJECT {
-	struct	list_head	link;
-	u32	dsp_addr;
-};
-
-/* Used for DMM reserved memory accounting */
-struct DMM_RSV_OBJECT {
-	struct	list_head	link;
-	u32	dsp_reserved_addr;
-};
+/* New structure (member of process context) abstracts DMM resource info */
+struct DMM_RES_OBJECT {
+	s32            dmmAllocated; /* DMM status */
+	u32           ulMpuAddr;
+	u32           ulDSPAddr;
+	u32           ulDSPResAddr;
+	u32           dmmSize;
+	HANDLE          hProcessor;
+	struct DMM_RES_OBJECT  *next;
+} ;
 
 /* New structure (member of process context) abstracts DMM resource info */
 struct DSPHEAP_RES_OBJECT {
@@ -116,7 +156,7 @@ struct DSPHEAP_RES_OBJECT {
 /* New structure (member of process context) abstracts stream resource info */
 struct STRM_RES_OBJECT {
 	s32                    streamAllocated; /* Stream status */
-	void *hStream;
+	DSP_HSTREAM             hStream;
 	u32                    uNumBufs;
 	u32                    uDir;
 	struct STRM_RES_OBJECT         *next;
@@ -134,28 +174,29 @@ struct PROCESS_CONTEXT{
 	enum GPP_PROC_RES_STATE resState;
 
 	/* Handle to Processor */
-	void *hProcessor;
+	DSP_HPROCESSOR hProcessor;
 
 	/* DSP Node resources */
 	struct NODE_RES_OBJECT *pNodeList;
-	struct mutex node_mutex;
+	struct mutex node_lock;
 
-	/* DMM mapped memory resources */
-	struct list_head dmm_map_list;
-	spinlock_t dmm_map_lock;
-
-	/* DMM reserved memory resources */
-	struct list_head dmm_rsv_list;
-	spinlock_t dmm_rsv_lock;
+	/* DMM resources */
+	struct DMM_RES_OBJECT *pDMMList;
+	struct mutex dmm_lock;
 
 	/* DSP Heap resources */
 	struct DSPHEAP_RES_OBJECT *pDSPHEAPList;
 
 	/* Stream resources */
 	struct STRM_RES_OBJECT *pSTRMList;
-	struct mutex strm_mutex;
-} ;
+	struct mutex strm_lock;
 
+#ifdef CONFIG_BRIDGE_RECOVERY
+	struct task_struct *task;
+	struct list_head list;
+#endif
+} ;
+#endif
 
 /*
  *  ======== DRV_Create ========
@@ -392,9 +433,5 @@ struct PROCESS_CONTEXT{
  */
 	extern DSP_STATUS DRV_ReleaseResources(IN u32 dwContext,
 					       struct DRV_OBJECT *hDrvObject);
-
-#ifdef CONFIG_BRIDGE_RECOVERY
-	void bridge_recover_schedule(void);
-#endif
 
 #endif				/* DRV_ */

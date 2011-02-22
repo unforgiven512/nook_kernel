@@ -3,9 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Memory management and address mapping services for the DSP/BIOS Bridge
- * class driver and mini-driver.
- *
  * Copyright (C) 2008 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -15,6 +12,57 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== mem.h ========
+ *  Purpose:
+ *      Memory management and address mapping services for the DSP/BIOS Bridge
+ *      class driver and mini-driver.
+ *
+ *  Public Functions:
+ *      MEM_Alloc
+ *      MEM_AllocObject
+ *      MEM_AllocPhysMem
+ *      MEM_Calloc
+ *      MEM_Exit
+ *      MEM_FlushCache
+ *      MEM_Free
+ *      MEM_FreeObject
+ *      MEM_FreePhysMem
+ *      MEM_GetNumPages
+ *      MEM_Init
+ *      MEM_IsValidHandle
+ *      MEM_LinearAddress
+ *      MEM_PageLock
+ *      MEM_PageUnlock
+ *      MEM_UnMapLinearAddress
+ *      MEM_VirtualToPhysical
+ *
+ *  Notes:
+ *
+ *! Revision History:
+ *! ================
+ *! 19-Apr-2004 sb: Added Alloc/Free PhysMem, FlushCache, VirtualToPhysical
+ *! 01-Sep-2001 ag: Cleaned up notes for MEM_LinearAddress() does not
+ *!                   require phys address to be page aligned!
+ *! 02-Dec-1999 rr: stdwin.h included for retail build
+ *! 12-Nov-1999 kc: Added warning about use of MEM_LinearAddress.
+ *! 29-Oct-1999 kc: Cleaned up for code review.
+ *! 10-Aug-1999 kc: Based on wsx-c18.
+ *! 07-Jan-1998 gp: Added MEM_AllocUMB and MEM_UMBFree for User Mapped Buffers
+ *!                 used by WMD_CHNL.
+ *! 23-Dec-1997 cr: Code review cleanup, removed dead Ring 3 code.
+ *! 04-Aug-1997 cr: Added explicit CDECL identifiers.
+ *! 01-Nov-1996 gp: Updated based on code review.
+ *! 04-Sep-1996 gp: Added MEM_PageLock() and MEM_PageUnlock() services.
+ *! 14-Aug-1996 mg: Added MEM_GetPhysAddr() and MEM_GetNumPages()
+ *! 25-Jul-1996 gp: Added MEM_IsValidHandle() macro.
+ *! 10-May-1996 gp: Added MEM_Calloc().
+ *! 25-Apr-1996 gp: Added MEM_PhysicalAddress()
+ *! 17-Apr-1996 gp: Added MEM_Exit function; updated to latest naming standard.
+ *! 08-Apr-1996 gp: Created.
  */
 
 #ifndef MEM_
@@ -60,13 +108,13 @@
  *  Ensures:
  *      A subsequent call to MEM_IsValidHandle() will succeed for this object.
  */
-#define MEM_AllocObject(pObj, Obj, Signature)		\
-do {							\
-	pObj = MEM_Calloc(sizeof(Obj), MEM_NONPAGED);	\
-	if (pObj) {					\
-		pObj->dwSignature = Signature;		\
-	}						\
-} while (0)
+#define MEM_AllocObject(pObj, Obj, Signature)           \
+{                                                       \
+    pObj = MEM_Calloc(sizeof(Obj), MEM_NONPAGED);       \
+    if (pObj) {                                         \
+	pObj->dwSignature = Signature;                  \
+    }                                                   \
+}
 
 /*  ======== MEM_AllocPhysMem ========
  *  Purpose:
@@ -140,6 +188,38 @@ do {							\
 	extern void MEM_FlushCache(void *pMemBuf, u32 cBytes, u32 FlushType);
 
 /*
+ *  ======== MEM_Free ========
+ *  Purpose:
+ *      Free the given block of system memory.
+ *  Parameters:
+ *      pMemBuf:    Pointer to memory allocated by MEM_Calloc/Alloc().
+ *  Returns:
+ *  Requires:
+ *      MEM initialized.
+ *      pMemBuf is a valid memory address returned by MEM_Calloc/Alloc().
+ *  Ensures:
+ *      pMemBuf is no longer a valid pointer to memory.
+ */
+	extern void MEM_Free(IN void *pMemBuf);
+
+/*
+ *  ======== MEM_VFree ========
+ *  Purpose:
+ *      Free the given block of system memory in virtual space.
+ *  Parameters:
+ *      pMemBuf:    Pointer to memory allocated by MEM_Calloc/Alloc()
+ *		    using vmalloc.
+ *  Returns:
+ *  Requires:
+ *      MEM initialized.
+ *      pMemBuf is a valid memory address returned by MEM_Calloc/Alloc()
+ *	using vmalloc.
+ *  Ensures:
+ *      pMemBuf is no longer a valid pointer to memory.
+ */
+	extern void MEM_VFree(IN void *pMemBuf);
+
+/*
  *  ======== MEM_FreePhysMem ========
  *  Purpose:
  *      Free the given block of physically contiguous memory.
@@ -168,15 +248,15 @@ do {							\
  *      pObj:   Pointer to the object to free.
  *  Returns:
  *  Requires:
- *      Same requirements as kfree().
+ *      Same requirements as MEM_Free().
  *  Ensures:
  *      A subsequent call to MEM_IsValidHandle() will fail for this object.
  */
-#define MEM_FreeObject(pObj)		\
-do {					\
-	pObj->dwSignature = 0x00;	\
-	kfree(pObj);			\
-} while (0)
+#define MEM_FreeObject(pObj)    \
+{                               \
+    pObj->dwSignature = 0x00;   \
+    MEM_Free(pObj);             \
+}
 
 /*
  *  ======== MEM_GetNumPages ========
@@ -254,7 +334,7 @@ do {					\
  *  Ensures:
  *      - pBaseAddr no longer points to a valid linear address.
  */
-#define MEM_UnmapLinearAddress(pBaseAddr) {}
+#define MEM_UnmapLinearAddress(pBaseAddr)
 
 /*
  *  ======== MEM_ExtPhysPoolInit ========

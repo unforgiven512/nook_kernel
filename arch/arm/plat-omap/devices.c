@@ -26,7 +26,7 @@
 #include <mach/mmc.h>
 #include <mach/mux.h>
 #include <mach/gpio.h>
-#include <mach/dsp_common.h>
+#include <plat/dsp_common.h>
 #include <mach/mcbsp.h>
 
 #if	defined(CONFIG_OMAP_DSP) || defined(CONFIG_OMAP_DSP_MODULE)

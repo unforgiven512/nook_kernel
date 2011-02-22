@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Manage lists of notification events.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,31 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== ntfyce.c ========
+ *  Purpose:
+ *      Manage lists of notification events.
+ *
+ *  Public Functions:
+ *      NTFY_Create
+ *      NTFY_Delete
+ *      NTFY_Exit
+ *      NTFY_Init
+ *      NTFY_Notify
+ *      NTFY_Register
+ *
+ *! Revision History:
+ *! =================
+ *! 06-Feb-2003 kc      Removed DSP_POSTMESSAGE related code.
+ *! 05-Nov-2001 kc      Updated DSP_HNOTIFICATION structure.
+ *! 10-May-2001 jeh     Removed SERVICES module init/exit from NTFY_Init/Exit.
+ *!                     NTFY_Register() returns DSP_ENOTIMPL for all but
+ *!                     DSP_SIGNALEVENT.
+ *! 12-Oct-2000 jeh     Use MEM_IsValidHandle().
+ *! 07-Sep-2000 jeh     Created.
  */
 
 /*  ----------------------------------- Host OS */
@@ -53,7 +76,7 @@ struct NTFY_OBJECT {
  *  This object will be created when a client registers for events.
  */
 struct NOTIFICATION {
-	struct list_head listElem;
+	struct LST_ELEM listElem;
 	u32 uEventMask;	/* Events to be notified about */
 	u32 uNotifyType;	/* Type of notification to be sent */
 
@@ -93,14 +116,12 @@ DSP_STATUS NTFY_Create(struct NTFY_OBJECT **phNtfy)
 
 		status = SYNC_InitializeDPCCS(&pNtfy->hSync);
 		if (DSP_SUCCEEDED(status)) {
-			pNtfy->notifyList = MEM_Calloc(sizeof(struct LST_LIST),
-							MEM_NONPAGED);
+			pNtfy->notifyList = LST_Create();
 			if (pNtfy->notifyList == NULL) {
 				(void) SYNC_DeleteCS(pNtfy->hSync);
 				MEM_FreeObject(pNtfy);
 				status = DSP_EMEMORY;
 			} else {
-				INIT_LIST_HEAD(&pNtfy->notifyList->head);
 				*phNtfy = pNtfy;
 			}
 		}
@@ -128,20 +149,13 @@ void NTFY_Delete(struct NTFY_OBJECT *hNtfy)
 
 	/* Remove any elements remaining in list */
 	if (hNtfy->notifyList) {
-
-		(void) SYNC_EnterCS(hNtfy->hSync);
-	
 		while ((pNotify = (struct NOTIFICATION *)LST_GetHead(hNtfy->
 								notifyList))) {
 			DeleteNotify(pNotify);
 		}
 		DBC_Assert(LST_IsEmpty(hNtfy->notifyList));
-		kfree(hNtfy->notifyList);
-
-		(void) SYNC_LeaveCS(hNtfy->hSync);
+		LST_Delete(hNtfy->notifyList);
 	}
-
-	
 	if (hNtfy->hSync)
 		(void)SYNC_DeleteCS(hNtfy->hSync);
 
@@ -155,7 +169,7 @@ void NTFY_Delete(struct NTFY_OBJECT *hNtfy)
  */
 void NTFY_Exit(void)
 {
-	/* Do nothing */
+	GT_0trace(NTFY_debugMask, GT_5CLASS, "Entered NTFY_Exit\n");
 }
 
 /*
@@ -166,6 +180,8 @@ void NTFY_Exit(void)
 bool NTFY_Init(void)
 {
 	GT_create(&NTFY_debugMask, "NY");	/* "NY" for NtfY */
+
+	GT_0trace(NTFY_debugMask, GT_5CLASS, "NTFY_Init()\n");
 
 	return true;
 }
@@ -199,7 +215,7 @@ void NTFY_Notify(struct NTFY_OBJECT *hNtfy, u32 uEventMask)
 
 		}
 		pNotify = (struct NOTIFICATION *)LST_Next(hNtfy->notifyList,
-			  (struct list_head *)pNotify);
+			  (struct LST_ELEM *)pNotify);
 	}
 
 	(void) SYNC_LeaveCS(hNtfy->hSync);
@@ -248,7 +264,7 @@ DSP_STATUS NTFY_Register(struct NTFY_OBJECT *hNtfy,
 			break;
 		}
 		pNotify = (struct NOTIFICATION *)LST_Next(hNtfy->notifyList,
-			  (struct list_head *)pNotify);
+			  (struct LST_ELEM *)pNotify);
 	}
 	if (pNotify == NULL) {
 		/* Not registered */
@@ -263,7 +279,7 @@ DSP_STATUS NTFY_Register(struct NTFY_OBJECT *hNtfy,
 
 		}
 		if (DSP_SUCCEEDED(status)) {
-			LST_InitElem((struct list_head *)pNotify);
+			LST_InitElem((struct LST_ELEM *) pNotify);
 			 /* If there is more than one notification type, each
 			 * type may require its own handler code. */
 			status = SYNC_OpenEvent(&pNotify->hSync, &syncAttrs);
@@ -273,7 +289,7 @@ DSP_STATUS NTFY_Register(struct NTFY_OBJECT *hNtfy,
 				pNotify->uEventMask = uEventMask;
 				pNotify->uNotifyType = uNotifyType;
 				LST_PutTail(hNtfy->notifyList,
-					   (struct list_head *)pNotify);
+					   (struct LST_ELEM *)pNotify);
 			} else {
 				DeleteNotify(pNotify);
 			}
@@ -283,7 +299,7 @@ DSP_STATUS NTFY_Register(struct NTFY_OBJECT *hNtfy,
 		if (uEventMask == 0) {
 			/* Remove from list and free */
 			LST_RemoveElem(hNtfy->notifyList,
-				      (struct list_head *)pNotify);
+				      (struct LST_ELEM *)pNotify);
 			DeleteNotify(pNotify);
 		} else {
 			/* Update notification mask (type shouldn't change) */
@@ -304,8 +320,9 @@ static void DeleteNotify(struct NOTIFICATION *pNotify)
 	if (pNotify->hSync)
 		(void) SYNC_CloseEvent(pNotify->hSync);
 
-	kfree(pNotify->pstrName);
+	if (pNotify->pstrName)
+		MEM_Free(pNotify->pstrName);
 
-	kfree(pNotify);
+	MEM_Free(pNotify);
 }
 

@@ -3,12 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Private header file defining channel manager and channel objects for
- * a shared memory channel driver.
- *
- * Shared between the modules implementing the shared memory channel class
- * library.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -20,11 +14,50 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+
+/*
+ *  ======== _chnl_sm.h ========
+ *  Description:
+ *      Private header file defining channel manager and channel objects for
+ *      a shared memory channel driver.
+ *
+ *  Public Functions:
+ *      None.
+ *
+ *  Notes:
+ *      Shared between the modules implementing the shared memory channel class
+ *      library.
+ *
+ *! Revision History:
+ *! ================
+ *! 15-Oct-2002 kc  Removed legacy PERF code.
+ *! 12-Jan-2002 ag  Removed unused gppReqIO & ddmaChnlId DDMA fields.
+ *!                 Added zero-copy chnl descriptor array: zchnldesc.
+ *! 21-Dec-2001 ag  Moved descPaGpp to private chnl obj from chnl descriptor.
+ *! 20-May-2001 ag/jeh Removed fShmSyms field from CHNL_MGR.
+ *! 04-Feb-2001 ag  DSP-DMA support added.
+ *! 26-Oct-2000 jeh Added arg and resvd to SHM control structure. Added dwArg
+ *!                 to CHNL_IRP.
+ *! 16-Oct-2000 jeh Removed #ifdef DEBUG from around channel object's cIOCs
+ *!                 field, added cIOReqs.
+ *! 20-Jan-2000 ag: Incorporated code review comments.
+ *! 05-Jan-2000 ag: Text format cleanup.
+ *! 03-Nov-1999 ag: Added szEventName[] to CHNL object for name event support.
+ *! 02-Nov-1999 ag: _SHM_BEG & _END Syms from COFF now used for IO and SM CLASS.
+ *! 27-Oct-1999 jeh Define SHM structure to work for 16-bit targets.
+ *! 25-May-1999 jg: Added target side symbol names for share memory buffer
+ *! 03-Jan-1997 gp: Added fSharedIRQ field.
+ *! 22-Oct-1996 gp: Made dwProcessID a handle.
+ *! 09-Sep-1996 gp: Added dwProcessID field to CHNL_OBJECT.
+ *! 13-Aug-1996 gp: Created.
+ */
+
 #ifndef _CHNL_SM_
 #define _CHNL_SM_
 
 #include <dspbridge/wcd.h>
 #include <dspbridge/wmd.h>
+#include <dspbridge/dpc.h>
 
 #include <dspbridge/list.h>
 #include <dspbridge/ntfy.h>
@@ -44,11 +77,6 @@
 #endif
 
 #define MAXOPPS 16
-
-/* Shared memory config options */
-#define SHM_CURROPP	0	/* Set current OPP in SHM */
-#define SHM_OPPINFO	1	/* Set dsp voltage and freq table values */
-#define SHM_GETOPP	2	/* Get opp requested by DSP */
 
 struct oppTableEntry {
     u32 voltage;
@@ -77,6 +105,12 @@ struct loadMonStruct {
     u32 predDspFreq;
 };
 
+	enum SHM_DESCTYPE {
+		SHM_CURROPP = 0,
+		SHM_OPPINFO = 1,
+		SHM_GETOPP = 2,		/* Get DSP requested OPP info */
+	} ;
+
 /* Structure in shared between DSP and PC for communication.*/
 	struct SHM {
 		u32 dspFreeMask;	/* Written by DSP, read by PC. */
@@ -99,15 +133,8 @@ struct loadMonStruct {
 		struct oppRqstStruct oppRequest;
 		/* load monitor information structure*/
 		struct loadMonStruct loadMonInfo;
-#ifdef CONFIG_BRIDGE_WDT3
-		/* Flag for WDT enable/disable F/I clocks */
-		u32 wdt_setclocks;
-		u32 wdt_overflow;	/* WDT overflow time */
-		char dummy[176];	/* padding to 256 byte boundary */
-#else
-		char dummy[184];	/* padding to 256 byte boundary */
-#endif
-		u32 shm_dbg_var[64];	/* shared memory debug variables */
+		char dummy[184];             /* padding to 256 byte boundary */
+		u32 shm_dbg_var[64];         /* shared memory debug variables */
 	} ;
 
 	/* Channel Manager: only one created per board: */
@@ -150,7 +177,7 @@ struct loadMonStruct {
 		struct SYNC_OBJECT *hSyncEvent;
 		/* Name of Sync event */
 		char szEventName[SYNC_MAXNAMELENGTH + 1];
-		u32 hProcess;   /* Process which created this channel */
+               u32 hProcess;   /* Process which created this channel */
 		u32 pCBArg;	/* Argument to use with callback */
 		struct LST_LIST *pIORequests;	/* List of IOR's to driver */
 		s32 cIOCs;	/* Number of IOC's in queue */
@@ -170,7 +197,7 @@ struct loadMonStruct {
 
 /* I/O Request/completion packet: */
 	struct CHNL_IRP {
-		struct list_head link;	/* Link to next CHIRP in queue. */
+		struct LST_ELEM link;	/* Link to next CHIRP in queue. */
 		/* Buffer to be filled/emptied. (User)   */
 		u8 *pHostUserBuf;
 		/* Buffer to be filled/emptied. (System) */

@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Definitions, types and function prototypes for the io (r/w external mem).
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,18 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== _tiomap_io.h ========
+ *  Description:
+ *      Definitions, types and function prototypes for the io
+ *      (r/w external mem).
+ *
+ *! Revision History
+ *! ================
+ *! 08-Oct-2002 rr:  Created.
  */
 
 #ifndef _TIOMAP_IO_
@@ -98,6 +108,5 @@ extern inline u32 ReadExt32BitDspData(IN const struct WMD_DEV_CONTEXT
 	return retVal;
 }
 
-int send_mbox_callback(void *arg);
-
 #endif				/* _TIOMAP_IO_ */
+

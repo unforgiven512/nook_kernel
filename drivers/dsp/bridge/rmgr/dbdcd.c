@@ -3,15 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * This file contains the implementation of the DSP/BIOS Bridge
- * Configuration Database (DCD).
- *
- * Notes:
- *   The fxn DCD_GetObjects can apply a callback fxn to each DCD object
- *   that is located in a specified COFF file.  At the moment,
- *   DCD_AutoRegister, DCD_AutoUnregister, and NLDR module all use
- *   DCD_GetObjects.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -21,6 +12,53 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== dbdcd.c ========
+ *  Description:
+ *      This file contains the implementation of the DSP/BIOS Bridge
+ *      Configuration Database (DCD).
+ *
+ *  Notes:
+ *      The fxn DCD_GetObjects can apply a callback fxn to each DCD object
+ *      that is located in a specified COFF file.  At the moment,
+ *      DCD_AutoRegister, DCD_AutoUnregister, and NLDR module all use
+ *      DCD_GetObjects.
+ *
+ *! Revision History
+ *! ================
+ *! 03-Dec-2003 map Changed DCD_OBJTYPE to DSP_DCDOBJTYPE
+ *! 17-Dec-2002 map Modified DCD_GetDepLibs, DCD_GetNumDepLibs, GetDepLibInfo
+ *!		 to include phase information
+ *! 02-Dec-2002 map Modified DCD_GetLibraryName for phases in different
+ *!		 libraries
+ *! 26-Feb-2003 kc  Updated DCD_AutoUnregister and DCD_GetObjects to simplify
+ *!		 DCD implementation.
+ *! 17-Jul-2002 jeh Call COD_Open() instead of COD_OpenBase(), call COD_Close()
+ *! 11-Jul-2002 jeh Added DCD_GetDepLibs(), DCD_GetNumDepLibs().
+ *! 18-Feb-2003 vp  Code review updates
+ *! 18-Oct-2002 vp  Ported to Linux platform
+ *! 15-Mar-2002 jeh Read dynamic loading memory requirements into node object
+ *!		 data. Added DCD_GetLibraryName().
+ *! 13-Feb-2002 jeh Get system stack size in GetAttrsFromBuf().
+ *! 01-Aug-2001 ag: Added check for PROC "extended" attributes used for
+ *!		    DSP-MMU setup. These are private attributes.
+ *! 18-Apr-2001 jeh Use COD_OpenBase instead of COD_LoadBase.
+ *! 03-Apr-2001 sg: Changed error names to DSP_EDCD* format.
+ *! 11-Jan-2001 jeh Changes to DCD_GetObjectDef to match node.cdb, proc.cdb.
+ *! 12-Dec-2000 kc: Added DCD_AutoUnregister. MSGNODE, DAISNODE added in
+ *!		 GetAttrsFromBuf
+ *! 22-Nov-2000 kc: Replaced sprintf() calls with strncat.
+ *! 09-Nov-2000 kc: Optimized DCD module.
+ *! 30-Oct-2000 kc: Added DCD_AutoRegister function; changed local var. names.
+ *! 29-Sep-2000 kc: Added code review changes (src/reviews/dcd_reviews.txt).
+ *! 06-Sep-2000 jeh Get message segid, message notification type. Added Atoi()
+ *!		 to replace atoi(), until cdb generation can output in
+ *!		 decimal format.
+ *! 26-Jul-2000 kc: Created.
+ *!
  */
 
 /*  ----------------------------------- Host OS */
@@ -96,12 +134,18 @@ DSP_STATUS DCD_AutoRegister(IN struct DCD_MANAGER *hDcdMgr,
 
 	DBC_Require(cRefs > 0);
 
-	if (IsValidHandle(hDcdMgr))
+	GT_1trace(curTrace, GT_ENTER, "DCD_AutoRegister: hDcdMgr 0x%x\n",
+		 hDcdMgr);
+
+	if (IsValidHandle(hDcdMgr)) {
 		status = DCD_GetObjects(hDcdMgr, pszCoffPath,
 					(DCD_REGISTERFXN)DCD_RegisterObject,
 					(void *)pszCoffPath);
-	else
+	} else {
 		status = DSP_EHANDLE;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_AutoRegister: invalid DCD manager handle.\n");
+	}
 
 	return status;
 }
@@ -118,11 +162,18 @@ DSP_STATUS DCD_AutoUnregister(IN struct DCD_MANAGER *hDcdMgr,
 
 	DBC_Require(cRefs > 0);
 
-	if (IsValidHandle(hDcdMgr))
+	GT_1trace(curTrace, GT_ENTER, "DCD_AutoUnregister: hDcdMgr 0x%x\n",
+		 hDcdMgr);
+
+	if (IsValidHandle(hDcdMgr)) {
 		status = DCD_GetObjects(hDcdMgr, pszCoffPath,
 				(DCD_REGISTERFXN)DCD_RegisterObject, NULL);
-	else
+	} else {
 		status = DSP_EHANDLE;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_AutoUnregister: invalid DCD manager"
+			 " handle.\n");
+	}
 
 	return status;
 }
@@ -142,9 +193,17 @@ DSP_STATUS DCD_CreateManager(IN char *pszZlDllName,
 	DBC_Require(cRefs >= 0);
 	DBC_Require(phDcdMgr);
 
+	GT_1trace(curTrace, GT_ENTER, "DCD_CreateManager: phDcdMgr 0x%x\n",
+		 phDcdMgr);
+
 	status = COD_Create(&hCodMgr, pszZlDllName, NULL);
-	if (DSP_FAILED(status))
+
+	if (DSP_FAILED(status)) {
+		status = DSP_EFAIL;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_CreateManager: COD_Create failed\n");
 		goto func_end;
+	}
 
 	/* Create a DCD object. */
 	MEM_AllocObject(pDcdMgr, struct DCD_MANAGER, SIGNATURE);
@@ -154,6 +213,10 @@ DSP_STATUS DCD_CreateManager(IN char *pszZlDllName,
 
 		/* Return handle to this DCD interface. */
 		*phDcdMgr = pDcdMgr;
+
+		GT_2trace(curTrace, GT_5CLASS,
+			 "DCD_CreateManager: pDcdMgr 0x%x, "
+			 " hCodMgr 0x%x", pDcdMgr, hCodMgr);
 	} else {
 		status = DSP_EMEMORY;
 
@@ -162,6 +225,9 @@ DSP_STATUS DCD_CreateManager(IN char *pszZlDllName,
 		 * COD manager.
 		 */
 		COD_Delete(hCodMgr);
+
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_CreateManager: MEM_AllocObject failed\n");
 	}
 
 	DBC_Ensure((DSP_SUCCEEDED(status)) || ((hCodMgr == NULL) &&
@@ -184,6 +250,9 @@ DSP_STATUS DCD_DestroyManager(IN struct DCD_MANAGER *hDcdMgr)
 
 	DBC_Require(cRefs >= 0);
 
+	GT_1trace(curTrace, GT_ENTER, "DCD_DestroyManager: hDcdMgr 0x%x\n",
+		 hDcdMgr);
+
 	if (IsValidHandle(hDcdMgr)) {
 		/* Delete the COD manager. */
 		COD_Delete(pDcdMgr->hCodMgr);
@@ -192,6 +261,9 @@ DSP_STATUS DCD_DestroyManager(IN struct DCD_MANAGER *hDcdMgr)
 		MEM_FreeObject(pDcdMgr);
 
 		status = DSP_SOK;
+	} else {
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_DestroyManager: invalid DCD manager handle.\n");
 	}
 
 	return status;
@@ -218,6 +290,10 @@ DSP_STATUS DCD_EnumerateObject(IN s32 cIndex, IN enum DSP_DCDOBJTYPE objType,
 	DBC_Require(cRefs >= 0);
 	DBC_Require(cIndex >= 0);
 	DBC_Require(pUuid != NULL);
+
+	GT_3trace(curTrace, GT_ENTER,
+		 "DCD_EnumerateObject: cIndex %d, objType %d, "
+		 " pUuid 0x%x\n", cIndex, objType, pUuid);
 
 	if ((cIndex != 0) && (cEnumRefs == 0)) {
 		/*
@@ -289,6 +365,9 @@ DSP_STATUS DCD_EnumerateObject(IN s32 cIndex, IN enum DSP_DCDOBJTYPE objType,
 			status = DSP_SENUMCOMPLETE;
 		} else {
 			status = DSP_EFAIL;
+			GT_1trace(curTrace, GT_6CLASS,
+				 "DCD_EnumerateObject: REG_EnumValue"
+				 " failed, status = 0x%x\n", status);
 		}
 	}
 
@@ -306,9 +385,13 @@ void DCD_Exit(void)
 {
 	DBC_Require(cRefs > 0);
 
+	GT_1trace(curTrace, GT_5CLASS, "DCD_Exit: cRefs 0x%x\n", cRefs);
+
 	cRefs--;
 	if (cRefs == 0) {
+		REG_Exit();
 		COD_Exit();
+		MEM_Exit();
 	}
 
 	DBC_Ensure(cRefs >= 0);
@@ -330,6 +413,9 @@ DSP_STATUS DCD_GetDepLibs(IN struct DCD_MANAGER *hDcdMgr,
 	DBC_Require(pDepLibUuids != NULL);
 	DBC_Require(pPersistentDepLibs != NULL);
 
+	GT_1trace(curTrace, GT_ENTER, "DCD_GetDepLibs: hDcdMgr 0x%x\n",
+		 hDcdMgr);
+
 	status = GetDepLibInfo(hDcdMgr, pUuid, &numLibs, NULL, pDepLibUuids,
 			      pPersistentDepLibs, phase);
 
@@ -350,6 +436,9 @@ DSP_STATUS DCD_GetNumDepLibs(IN struct DCD_MANAGER *hDcdMgr,
 	DBC_Require(pNumLibs != NULL);
 	DBC_Require(pNumPersLibs != NULL);
 	DBC_Require(pUuid != NULL);
+
+	GT_1trace(curTrace, GT_ENTER, "DCD_GetNumDepLibs: hDcdMgr 0x%x\n",
+		 hDcdMgr);
 
 	status = GetDepLibInfo(hDcdMgr, pUuid, pNumLibs, pNumPersLibs,
 				NULL, NULL, phase);
@@ -386,14 +475,18 @@ DSP_STATUS DCD_GetObjectDef(IN struct DCD_MANAGER *hDcdMgr,
 	DBC_Require(pObjDef != NULL);
 	DBC_Require(pObjUuid != NULL);
 
+	GT_4trace(curTrace, GT_ENTER,
+		 "DCD_GetObjectDef: hDcdMgr 0x%x, " "objUuid"
+		 " 0x%x, objType 0x%x, pObjDef 0x%x\n", hDcdMgr, pObjUuid,
+		 objType, pObjDef);
 	szUuid = (char *)MEM_Calloc(MAXUUIDLEN, MEM_PAGED);
-	if (!szUuid) {
-		status = DSP_EMEMORY;
-		goto func_end;
-	}
+	if (!szUuid)
+		return status = DSP_EMEMORY;
 
 	if (!IsValidHandle(hDcdMgr)) {
 		status = DSP_EHANDLE;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef: invalid "
+			 "DCD manager handle.\n");
 		goto func_end;
 	}
 
@@ -439,6 +532,8 @@ DSP_STATUS DCD_GetObjectDef(IN struct DCD_MANAGER *hDcdMgr,
 
 	if (DSP_FAILED(status)) {
 		status = DSP_EUUID;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef: "
+			 "REG_GetValue() failed\n");
 		goto func_end;
 	}
 
@@ -446,6 +541,8 @@ DSP_STATUS DCD_GetObjectDef(IN struct DCD_MANAGER *hDcdMgr,
 	status = COD_Open(pDcdMgr->hCodMgr, szRegData, COD_NOLOAD, &lib);
 	if (DSP_FAILED(status)) {
 		status = DSP_EDCDLOADBASE;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef: "
+			 "COD_OpenBase() failed\n");
 		goto func_end;
 	}
 
@@ -462,6 +559,8 @@ DSP_STATUS DCD_GetObjectDef(IN struct DCD_MANAGER *hDcdMgr,
 	status = COD_GetSection(lib, szSectName, &ulAddr, &ulLen);
 	if (DSP_FAILED(status)) {
 		status = DSP_EDCDGETSECT;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef:"
+			 " COD_GetSection() failed\n");
 		goto func_end;
 	}
 
@@ -491,19 +590,25 @@ DSP_STATUS DCD_GetObjectDef(IN struct DCD_MANAGER *hDcdMgr,
 
 		/* Parse the content of the COFF buffer. */
 		status = GetAttrsFromBuf(pszCoffBuf, ulLen, objType, pObjDef);
-		if (DSP_FAILED(status))
+		if (DSP_FAILED(status)) {
 			status = DSP_EDCDPARSESECT;
+			GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef: "
+				 "GetAttrsFromBuf() failed\n");
+		}
 	} else {
 		status = DSP_EDCDREADSECT;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjectDef: "
+			 "COD_ReadSection() failed\n");
 	}
 
 	/* Free the previously allocated dynamic buffer. */
-	kfree(pszCoffBuf);
+	MEM_Free(pszCoffBuf);
 func_end:
 	if (lib)
 		COD_Close(lib);
 
-	kfree(szUuid);
+	if (szUuid)
+		MEM_Free(szUuid);
 
 	return status;
 }
@@ -527,8 +632,12 @@ DSP_STATUS DCD_GetObjects(IN struct DCD_MANAGER *hDcdMgr, IN char *pszCoffPath,
 	s32 cObjectType;
 
 	DBC_Require(cRefs > 0);
+	GT_1trace(curTrace, GT_ENTER,
+		 "DCD_GetObjects: hDcdMgr 0x%x\n", hDcdMgr);
 	if (!IsValidHandle(hDcdMgr)) {
 		status = DSP_EHANDLE;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_GetObjects: invalid DCD manager handle.\n");
 		goto func_end;
 	}
 
@@ -536,6 +645,8 @@ DSP_STATUS DCD_GetObjects(IN struct DCD_MANAGER *hDcdMgr, IN char *pszCoffPath,
 	status = COD_Open(pDcdMgr->hCodMgr, pszCoffPath, COD_NOLOAD, &lib);
 	if (DSP_FAILED(status)) {
 		status = DSP_EDCDLOADBASE;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_AutoRegister: COD_Open() failed\n");
 		goto func_cont;
 	}
 
@@ -543,6 +654,9 @@ DSP_STATUS DCD_GetObjects(IN struct DCD_MANAGER *hDcdMgr, IN char *pszCoffPath,
 	status = COD_GetSection(lib, DCD_REGISTER_SECTION, &ulAddr, &ulLen);
 	if (DSP_FAILED(status) ||  !(ulLen > 0)) {
 		status = DSP_EDCDNOAUTOREGISTER;
+		GT_0trace(curTrace, GT_6CLASS,
+			 "DCD_GetObjects: COD_GetSection() "
+			 "- no auto register section\n");
 		goto func_cont;
 	}
 
@@ -563,6 +677,8 @@ DSP_STATUS DCD_GetObjects(IN struct DCD_MANAGER *hDcdMgr, IN char *pszCoffPath,
 #endif
 	if (DSP_SUCCEEDED(status)) {
 		/* Compress DSP buffer to conform to PC format. */
+		GT_0trace(curTrace, GT_4CLASS,
+			 "Successfully read section !!\n");
 		if (strstr(pszCoffPath, "iva") == NULL) {
 			CompressBuf(pszCoffBuf, ulLen, DSPWORDSIZE);
 		} else {
@@ -591,18 +707,29 @@ DSP_STATUS DCD_GetObjects(IN struct DCD_MANAGER *hDcdMgr, IN char *pszCoffPath,
 			 *  2) Unregister found DCD object (when handle == NULL)
 			 *  3) Add overlay node.
 			 */
+			GT_1trace(curTrace, GT_4CLASS, "Registering objtype "
+				 "%d \n", cObjectType);
 			status = registerFxn(&dspUuid, cObjectType, handle);
-			if (DSP_FAILED(status)) {
+			if (DSP_SUCCEEDED(status)) {
+				GT_1trace(curTrace, GT_5CLASS,
+					 "DCD_GetObjects: status 0x%x\n",
+					 status);
+			} else {
+				GT_0trace(curTrace, GT_6CLASS,
+					 "DCD_GetObjects: "
+					 "registration() failed\n");
 				/* if error occurs, break from while loop. */
 				break;
 			}
 		}
 	} else {
 		status = DSP_EDCDREADSECT;
+		GT_0trace(curTrace, GT_6CLASS, "DCD_GetObjects: "
+			 "COD_ReadSection() failed\n");
 	}
 
 	/* Free the previously allocated dynamic buffer. */
-	kfree(pszCoffBuf);
+	MEM_Free(pszCoffBuf);
 func_cont:
 	if (lib)
 		COD_Close(lib);
@@ -670,10 +797,13 @@ DSP_STATUS DCD_GetLibraryName(IN struct DCD_MANAGER *hDcdMgr,
 		sprintf(szObjType, "%d", DSP_DCDLIBRARYTYPE);
 		break;
 	default:
-		status = DSP_EINVALIDARG;
+		status = -1;
 		DBC_Assert(false);
 	}
-	if (DSP_SUCCEEDED(status)) {
+	if (status == -1) {
+		status = DSP_EFAIL;
+	} else {
+		status = DSP_SOK;
 		if ((strlen(szRegKey) + strlen(szObjType)) <
 		   REG_MAXREGPATHLENGTH) {
 			strncat(szRegKey, szObjType, strlen(szObjType) + 1);
@@ -731,25 +861,44 @@ DSP_STATUS DCD_GetLibraryName(IN struct DCD_MANAGER *hDcdMgr,
  */
 bool DCD_Init(void)
 {
+	bool fInitMEM;
+	bool fInitREG;
 	bool fInitCOD;
 	bool fInit = true;
 
 	DBC_Require(cRefs >= 0);
 
+	GT_1trace(curTrace, GT_ENTER, "DCD_Init: (on enter) cRefs = 0x%x\n",
+		 cRefs);
+
 	if (cRefs == 0) {
 		/* Initialize required modules. */
+		fInitMEM = MEM_Init();
 		fInitCOD = COD_Init();
+		fInitREG = REG_Init();
 
-		if (!fInitCOD) {
+		if (!fInitMEM || !fInitCOD || !fInitREG) {
 			fInit = false;
+			GT_0trace(curTrace, GT_6CLASS, "DCD_Init failed\n");
 			/* Exit initialized modules. */
+			if (fInitMEM)
+				MEM_Exit();
+
 			if (fInitCOD)
 				COD_Exit();
+
+			if (fInitREG)
+				REG_Exit();
+
 		}
 	}
 
 	if (fInit)
 		cRefs++;
+
+
+	GT_1trace(curTrace, GT_5CLASS, "DCD_Init: (on exit) cRefs = 0x%x\n",
+		 cRefs);
 
 	DBC_Ensure((fInit && (cRefs > 0)) || (!fInit && (cRefs == 0)));
 
@@ -834,9 +983,19 @@ DSP_STATUS DCD_RegisterObject(IN struct DSP_UUID *pUuid,
 		GT_2trace(curTrace, GT_6CLASS, "REG_SetValue  "
 			  "(u8 *)pszPathName=%s, dwPathSize=%d\n",
 			  pszPathName, dwPathSize);
+		if (DSP_FAILED(status)) {
+			status = DSP_EFAIL;
+			GT_0trace(curTrace, GT_6CLASS,
+				"DCD_RegisterObject: REG_SetValue failed!\n");
+		}
 	} else {
 		/* Deregister an existing object. */
 		status = REG_DeleteValue(szRegKey);
+		if (DSP_FAILED(status)) {
+			status = DSP_EFAIL;
+			GT_0trace(curTrace, GT_6CLASS, "DCD_UnregisterObject: "
+				"REG_DeleteValue failed!\n");
+		}
 	}
 
 	if (DSP_SUCCEEDED(status)) {
@@ -872,6 +1031,10 @@ DSP_STATUS DCD_UnregisterObject(IN struct DSP_UUID *pUuid,
 		   (objType == DSP_DCDEXECUTELIBTYPE) ||
 		   (objType == DSP_DCDDELETELIBTYPE));
 
+	GT_2trace(curTrace, GT_ENTER,
+		 "DCD_UnregisterObject: object UUID 0x%x, "
+		 "objType %d\n", pUuid, objType);
+
 	/*
 	 *  When DCD_RegisterObject is called with NULL as pathname,
 	 *  it indicates an unregister object operation.
@@ -894,20 +1057,50 @@ DSP_STATUS DCD_UnregisterObject(IN struct DSP_UUID *pUuid,
  */
 static s32 Atoi(char *pszBuf)
 {
+	s32 result = 0;
 	char *pch = pszBuf;
-	s32 base = 0;
+	char c;
+	char first;
+	s32 base = 10;
+	s32 len;
 
 	while (isspace(*pch))
 		pch++;
 
-	if (*pch == '-' || *pch == '+') {
-		base = 10;
+	first = *pch;
+	if (first == '-' || first == '+') {
 		pch++;
-	} else if (*pch && tolower(pch[strlen(pch) - 1]) == 'h') {
-		base = 16;
+	} else {
+		/* Determine if base 10 or base 16 */
+		len = strlen(pch);
+		if (len  > 1) {
+			c = pch[1];
+			if ((*pch == '0' && (c == 'x' || c == 'X'))) {
+				base = 16;
+				pch += 2;
+			}
+			c = pch[len - 1];
+			if (c == 'h' || c == 'H')
+				base = 16;
+
+		}
 	}
 
-	return simple_strtoul(pch, NULL, base);
+	while (isdigit(c = *pch) || ((base == 16) && isxdigit(c))) {
+		result *= base;
+		if ('A' <= c && c <= 'F') {
+			c = c - 'A' + 10;
+		} else {
+			if ('a' <= c && c <= 'f')
+				c = c - 'a' + 10;
+			else
+				c -= '0';
+		}
+		result += c;
+		++pch;
+	}
+
+	return result;
 }
 
 /*
@@ -1045,10 +1238,6 @@ static DSP_STATUS GetAttrsFromBuf(char *pszBuf, u32 ulBufSize,
 		cLen = strlen(token);
 		pGenObj->objData.nodeObj.pstrCreatePhaseFxn =
 			MEM_Calloc(cLen + 1, MEM_PAGED);
-		if (!pGenObj->objData.nodeObj.pstrCreatePhaseFxn) {
-			status = DSP_EMEMORY;
-			break;
-		}
 		strncpy(pGenObj->objData.nodeObj.pstrCreatePhaseFxn,
 			token, cLen);
 		pGenObj->objData.nodeObj.pstrCreatePhaseFxn[cLen] = '\0';
@@ -1059,10 +1248,6 @@ static DSP_STATUS GetAttrsFromBuf(char *pszBuf, u32 ulBufSize,
 		cLen = strlen(token);
 		pGenObj->objData.nodeObj.pstrExecutePhaseFxn =
 			 MEM_Calloc(cLen + 1, MEM_PAGED);
-		if (!pGenObj->objData.nodeObj.pstrExecutePhaseFxn) {
-			status = DSP_EMEMORY;
-			break;
-		}
 		strncpy(pGenObj->objData.nodeObj.pstrExecutePhaseFxn,
 			token, cLen);
 		pGenObj->objData.nodeObj.pstrExecutePhaseFxn[cLen] = '\0';
@@ -1073,10 +1258,6 @@ static DSP_STATUS GetAttrsFromBuf(char *pszBuf, u32 ulBufSize,
 		cLen = strlen(token);
 		pGenObj->objData.nodeObj.pstrDeletePhaseFxn =
 			MEM_Calloc(cLen + 1, MEM_PAGED);
-		if (!pGenObj->objData.nodeObj.pstrDeletePhaseFxn) {
-			status = DSP_EMEMORY;
-			break;
-		}
 		strncpy(pGenObj->objData.nodeObj.pstrDeletePhaseFxn,
 			token, cLen);
 		pGenObj->objData.nodeObj.pstrDeletePhaseFxn[cLen] = '\0';
@@ -1095,10 +1276,6 @@ static DSP_STATUS GetAttrsFromBuf(char *pszBuf, u32 ulBufSize,
 			cLen = strlen(token);
 			pGenObj->objData.nodeObj.pstrIAlgName =
 				MEM_Calloc(cLen + 1, MEM_PAGED);
-			if (!pGenObj->objData.nodeObj.pstrIAlgName) {
-				status = DSP_EMEMORY;
-				break;
-			}
 			strncpy(pGenObj->objData.nodeObj.pstrIAlgName,
 				token, cLen);
 			pGenObj->objData.nodeObj.pstrIAlgName[cLen] = '\0';
@@ -1205,13 +1382,6 @@ static DSP_STATUS GetAttrsFromBuf(char *pszBuf, u32 ulBufSize,
 		break;
 	}
 
-	/* Check for Memory leak */
-	if (status == DSP_EMEMORY) {
-		kfree(pGenObj->objData.nodeObj.pstrCreatePhaseFxn);
-		kfree(pGenObj->objData.nodeObj.pstrExecutePhaseFxn);
-		kfree(pGenObj->objData.nodeObj.pstrDeletePhaseFxn);
-	}
-
 	return status;
 }
 
@@ -1316,6 +1486,9 @@ static DSP_STATUS GetDepLibInfo(IN struct DCD_MANAGER *hDcdMgr,
 	DBC_Require(pNumLibs != NULL);
 	DBC_Require(pUuid != NULL);
 
+	GT_1trace(curTrace, GT_ENTER, "DCD_GetNumDepLibs: hDcdMgr 0x%x\n",
+		 hDcdMgr);
+
 	/*  Initialize to 0 dependent libraries, if only counting number of
 	 *  dependent libraries */
 	if (!fGetUuids) {
@@ -1396,9 +1569,11 @@ func_cont:
 		COD_Close(lib);
 
 	/* Free previously allocated dynamic buffers. */
-	kfree(pszFileName);
+	if (pszFileName)
+		MEM_Free(pszFileName);
 
-	kfree(pszCoffBuf);
+	if (pszCoffBuf)
+		MEM_Free(pszCoffBuf);
 
 	return status;
 }

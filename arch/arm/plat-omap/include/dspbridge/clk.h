@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Provides Clock functions.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,13 +14,23 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+/*
+ *  ======== clk.h ========
+ *  Purpose: Provides Clock functions.
+ *
+ *! Revision History:
+ *! ================
+ *! 08-May-2007 rg: Moved all clock functions from sync module.
+ */
+
 #ifndef _CLK_H
 #define _CLK_H
 
 	/* Generic TIMER object: */
 	struct TIMER_OBJECT;
 	enum SERVICES_ClkId {
-		SERVICESCLK_iva2_ck,
+		SERVICESCLK_iva2_ck = 0,
+		SERVICESCLK_mailbox_ick,
 		SERVICESCLK_gpt5_fck,
 		SERVICESCLK_gpt5_ick,
 		SERVICESCLK_gpt6_fck,

@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Provide registry functions.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -14,6 +12,25 @@
  * THIS PACKAGE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ */
+
+
+/*
+ *  ======== regce.c ========
+ *  Purpose:
+ *      Provide registry functions.
+ *
+ *  Public Functions:
+ *      REG_DeleteValue
+ *      REG_EnumValue
+ *      REG_Exit
+ *      REG_GetValue
+ *      REG_Init
+ *      REG_SetValue
+ *
+ *! Revision History:
+ *! ================
+ *
  */
 
 /*  ----------------------------------- Host OS */
@@ -52,12 +69,17 @@ static unsigned int crefs;		/* module counter */
 DSP_STATUS REG_DeleteValue(IN CONST char *pstrValue)
 {
 	DSP_STATUS status;
-	DBC_Require(strlen(pstrValue) < REG_MAXREGPATHLENGTH);
+       DBC_Require(strlen(pstrValue) < REG_MAXREGPATHLENGTH);
+
+	GT_0trace(REG_debugMask, GT_ENTER, "REG_DeleteValue: entered\n");
 
 	SYNC_EnterCS(reglock);
-	status = regsupDeleteValue(pstrValue);
-	SYNC_LeaveCS(reglock);
+	if (regsupDeleteValue(pstrValue) == DSP_SOK)
+		status = DSP_SOK;
+	else
+		status = DSP_EFAIL;
 
+	SYNC_LeaveCS(reglock);
 	return status;
 }
 
@@ -79,6 +101,8 @@ DSP_STATUS REG_EnumValue(IN u32 dwIndex,
 	DBC_Require(*pdwValueSize <= REG_MAXREGPATHLENGTH);
        DBC_Require(strlen(pstrKey) < REG_MAXREGPATHLENGTH);
 
+	GT_0trace(REG_debugMask, GT_ENTER, "REG_EnumValue: entered\n");
+
 	SYNC_EnterCS(reglock);
 	status = regsupEnumValue(dwIndex, pstrKey, pstrValue, pdwValueSize,
 				 pstrData, pdwDataSize);
@@ -93,6 +117,8 @@ DSP_STATUS REG_EnumValue(IN u32 dwIndex,
  */
 void REG_Exit(void)
 {
+	GT_0trace(REG_debugMask, GT_5CLASS, "REG_Exit\n");
+
 	if (reglock)
 		SYNC_DeleteCS(reglock);
 
@@ -112,6 +138,8 @@ DSP_STATUS REG_GetValue(IN CONST char *pstrValue, OUT u8 *pbData,
 
 	DBC_Require(pstrValue && pbData);
        DBC_Require(strlen(pstrValue) < REG_MAXREGPATHLENGTH);
+
+	GT_0trace(REG_debugMask, GT_ENTER, "REG_GetValue: entered\n");
 
 	SYNC_EnterCS(reglock);
 	/*  We need to use regsup calls...  */
@@ -134,7 +162,7 @@ bool REG_Init(void)
 {
 	bool fInit;
 
-	GT_create(&REG_debugMask, "RG");        /* RG for ReG */
+	GT_create(&REG_debugMask, "RG");	/* RG for ReG */
 
 	fInit = regsupInit();
 
@@ -158,17 +186,18 @@ DSP_STATUS REG_SetValue(IN CONST char *pstrValue, IN u8 *pbData,
 
 	DBC_Require(pstrValue && pbData);
 	DBC_Require(dwDataSize > 0);
-	DBC_Require(strlen(pstrValue) < REG_MAXREGPATHLENGTH);
+       DBC_Require(strlen(pstrValue) < REG_MAXREGPATHLENGTH);
 
 	SYNC_EnterCS(reglock);
-	/*
-	 * We need to use regsup calls
-	 * for now we don't need the key handle or
-	 * the subkey, all we need is the value to lookup.
-	 */
-	status = regsupSetValue((char *)pstrValue, pbData, dwDataSize);
-	SYNC_LeaveCS(reglock);
+	/*  We need to use regsup calls...  */
+	/*  ...for now we don't need the key handle or  */
+	/*  the subkey, all we need is the value to lookup.  */
+	if (regsupSetValue((char *)pstrValue, pbData, dwDataSize) == DSP_SOK)
+		status = DSP_SOK;
+	else
+		status = DSP_EFAIL;
 
+	SYNC_LeaveCS(reglock);
 	return status;
 }
 

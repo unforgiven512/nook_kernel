@@ -3,8 +3,6 @@
  *
  * DSP-BIOS Bridge driver support functions for TI OMAP processors.
  *
- * Implements upper edge functions for WMD channel module.
- *
  * Copyright (C) 2005-2006 Texas Instruments, Inc.
  *
  * This package is free software; you can redistribute it and/or modify
@@ -16,7 +14,26 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+
 /*
+ *  ======== chnl_sm.c ========
+ *  Description:
+ *      Implements upper edge functions for WMD channel module.
+ *
+ *  Public Functions:
+ *      WMD_CHNL_AddIOReq
+ *      WMD_CHNL_CancelIO
+ *      WMD_CHNL_Close
+ *      WMD_CHNL_Create
+ *      WMD_CHNL_Destroy
+ *      WMD_CHNL_FlushIO
+ *      WMD_CHNL_GetInfo
+ *      WMD_CHNL_GetIOC
+ *      WMD_CHNL_GetMgrInfo
+ *      WMD_CHNL_Idle
+ *      WMD_CHNL_Open
+ *
+ *  Notes:
  *      The lower edge functions must be implemented by the WMD writer, and
  *      are declared in chnl_sm.h.
  *
@@ -40,6 +57,60 @@
  *          LST_Empty(pChnl->pIOCompletions) ==> pChnl->hSyncEvent is reset
  *      and
  *          !LST_Empty(pChnl->pIOCompletions) ==> pChnl->hSyncEvent is set.
+ *
+ *! Revision History:
+ *! ================
+ *! 10-Feb-2004 sb: Consolidated the MAILBOX_IRQ macro at the top of the file.
+ *! 05-Jan-2004 vp: Updated for 2.6 kernel on 24xx platform.
+ *! 23-Apr-2003 sb: Fixed mailbox deadlock
+ *! 24-Feb-2003 vp: Code Review Updates.
+ *! 18-Oct-2002 vp: Ported to Linux platform
+ *! 29-Aug-2002 rr  Changed the SYNC error code return to DSP error code return
+ *            in WMD_CHNL_GetIOC.
+ *! 22-Jan-2002 ag  Zero-copy support added.
+ *!                 CMM_CallocBuf() used for SM allocations.
+ *! 04-Feb-2001 ag  DSP-DMA support added.
+ *! 22-Nov-2000 kc: Updated usage of PERF_RegisterStat.
+ *! 06-Nov-2000 jeh Move ISR_Install, DPC_Create from CHNL_Create to IO_Create.
+ *! 13-Oct-2000 jeh Added dwArg parameter to WMD_CHNL_AddIOReq(), added
+ *!                 WMD_CHNL_Idle and WMD_CHNL_RegisterNotify for DSPStream.
+ *!                 Remove #ifdef DEBUG from around channel cIOCs field.
+ *! 21-Sep-2000 rr: PreOMAP chnl class library acts like a IO class library.
+ *! 25-Sep-2000 ag: MEM_[Unmap]LinearAddress added for #ifdef CHNL_PREOMAP.
+ *! 07-Sep-2000 rr: Added new channel class for PreOMAP.
+ *! 11-Jul-2000 jeh Allow NULL user event in WMD_CHNL_Open().
+ *! 06-Jul-2000 rr: Changed prefix PROC to PRCS for process module calls.
+ *! 20-Jan-2000 ag: Incorporated code review comments.
+ *! 05-Jan-2000 ag: Text format cleanup.
+ *! 07-Dec-1999 ag: Now setting ChnlMgr fSharedIRQ flag before ISR_Install().
+ *! 01-Dec-1999 ag: WMD_CHNL_Open() now accepts named sync event.
+ *! 14-Nov-1999 ag: DPC_Schedule() uncommented.
+ *! 28-Oct-1999 ag: CHNL Attrs userEvent not supported.
+ *!                 SM addrs taken from COFF(IO) or host resource(SM).
+ *! 25-May-1999 jg: CHNL_IOCLASS boards now get their shared memory buffer
+ *!                 address and length from symbols defined in the currently
+ *!                 loaded COFF file. See _chn_sm.h.
+ *! 18-Jun-1997 gp: Moved waiting back to ring 0 to improve performance.
+ *! 22-Jan-1998 gp: Update User's pIOC struct in GetIOC at lower IRQL (NT).
+ *! 16-Jan-1998 gp: Commented out PERF stuff, since it is not all there in NT.
+ *! 13-Jan-1998 gp: Protect IOCTLs from IO_DPC by raising IRQL to DIRQL (NT).
+ *! 22-Oct-1997 gp: Call SYNC_OpenEvent in CHNL_Open, for NT support.
+ *! 18-Jun-1997 gp: Moved waiting back to ring 0 to improve performance.
+ *! 16-Jun-1997 gp: Added call into lower edge CHNL function to allow override
+ *!                 of the SHM window length reported by Windows CM.
+ *! 05-Jun-1997 gp: Removed unnecessary critical sections.
+ *! 18-Mar-1997 gp: Ensured CHNL_FlushIO on input leaves channel in READY state.
+ *! 06-Jan-1997 gp: ifdefed to support the IO variant of SHM channel class lib.
+ *! 21-Jan-1997 gp: CHNL_Close: set pChnl = NULL for DBC_Ensure().
+ *! 14-Jan-1997 gp: Updated based on code review feedback.
+ *! 03-Jan-1997 gp: Added CHNL_E_WAITTIMEOUT error return code to CHNL_FlushIO()
+ *! 23-Oct-1996 gp: Tag channel with ring 0 process handle.
+ *! 13-Sep-1996 gp: Added performance statistics for channel.
+ *! 09-Sep-1996 gp: Added WMD_CHNL_GetMgrInfo().
+ *! 04-Sep-1996 gp: Removed shared memory control struct offset: made zero.
+ *! 01-Aug-1996 gp: Implemented basic channel manager and channel create/delete.
+ *! 17-Jul-1996 gp: Started pseudo coding.
+ *! 11-Jul-1996 gp: Stubbed out.
  */
 
 /*  ----------------------------------- OS */
@@ -62,7 +133,6 @@
 /*  ----------------------------------- Mini-Driver */
 #include <dspbridge/wmd.h>
 #include <dspbridge/wmdchnl.h>
-#include "_tiomap.h"
 
 /*  ----------------------------------- Platform Manager */
 #include <dspbridge/dev.h>
@@ -98,8 +168,6 @@ DSP_STATUS WMD_CHNL_AddIOReq(struct CHNL_OBJECT *hChnl, void *pHostBuf,
 	DSP_STATUS status = DSP_SOK;
 	struct CHNL_OBJECT *pChnl = (struct CHNL_OBJECT *)hChnl;
 	struct CHNL_IRP *pChirp = NULL;
-	struct WMD_DEV_CONTEXT *dev_ctxt;
-	struct DEV_OBJECT *dev_obj;
 	u32 dwState;
 	bool fIsEOS;
 	struct CHNL_MGR *pChnlMgr = pChnl->pChnlMgr;
@@ -107,7 +175,41 @@ DSP_STATUS WMD_CHNL_AddIOReq(struct CHNL_OBJECT *hChnl, void *pHostBuf,
 	bool fSchedDPC = false;
 	u16 wMbVal = 0;
 
-	fIsEOS = (cBytes == 0);
+	DBG_Trace(DBG_ENTER,
+		  "> WMD_CHNL_AddIOReq pChnl %p CHNL_IsOutput %x uChnlType "
+		  "%x Id %d\n", pChnl, CHNL_IsOutput(pChnl->uMode),
+		  pChnl->uChnlType, pChnl->uId);
+
+	fIsEOS = (cBytes == 0) ? true : false;
+
+	if (pChnl->uChnlType == CHNL_PCPY && pChnl->uId > 1 && pHostBuf) {
+		if (!(pHostBuf < (void *)USERMODE_ADDR)) {
+			pHostSysBuf = pHostBuf;
+			goto func_cont;
+		}
+		/* if addr in user mode, then copy to kernel space */
+		pHostSysBuf = MEM_Alloc(cBufSize, MEM_NONPAGED);
+		if (pHostSysBuf == NULL) {
+			status = DSP_EMEMORY;
+			DBG_Trace(DBG_LEVEL7,
+				 "No memory to allocate kernel buffer\n");
+			goto func_cont;
+		}
+		if (CHNL_IsOutput(pChnl->uMode)) {
+			status = copy_from_user(pHostSysBuf, pHostBuf,
+						cBufSize);
+			if (status) {
+				DBG_Trace(DBG_LEVEL7,
+					 "Error copying user buffer to "
+					 "kernel, %d bytes remaining.\n",
+					 status);
+				MEM_Free(pHostSysBuf);
+				pHostSysBuf = NULL;
+				status = DSP_EPOINTER;
+			}
+		}
+	}
+func_cont:
 	/* Validate args:  */
 	if (pHostBuf == NULL) {
 		status = DSP_EPOINTER;
@@ -120,55 +222,24 @@ DSP_STATUS WMD_CHNL_AddIOReq(struct CHNL_OBJECT *hChnl, void *pHostBuf,
 		 * allows */
 		dwState = pChnl->dwState;
 		if (dwState != CHNL_STATEREADY) {
-			if (dwState & CHNL_STATECANCEL)
+			if (dwState & CHNL_STATECANCEL) {
 				status = CHNL_E_CANCELLED;
-			else if ((dwState & CHNL_STATEEOS)
-				   && CHNL_IsOutput(pChnl->uMode))
+			} else if ((dwState & CHNL_STATEEOS)
+				   && CHNL_IsOutput(pChnl->uMode)) {
 				status = CHNL_E_EOS;
-			else
+			} else {
 				/* No other possible states left: */
 				DBC_Assert(0);
-		}
-	}
-
-	dev_obj = DEV_GetFirst();
-	DEV_GetWMDContext(dev_obj, &dev_ctxt);
-	if (!dev_ctxt)
-		status = DSP_EHANDLE;
-
-	if (DSP_FAILED(status))
-		goto func_end;
-
-	if (pChnl->uChnlType == CHNL_PCPY && pChnl->uId > 1 && pHostBuf) {
-		if (!(pHostBuf < (void *)USERMODE_ADDR)) {
-			pHostSysBuf = pHostBuf;
-			goto func_cont;
-		}
-		/* if addr in user mode, then copy to kernel space */
-		pHostSysBuf = MEM_Alloc(cBufSize, MEM_NONPAGED);
-		if (pHostSysBuf == NULL) {
-			status = DSP_EMEMORY;
-			goto func_end;
-		}
-		if (CHNL_IsOutput(pChnl->uMode)) {
-			status = copy_from_user(pHostSysBuf, pHostBuf,
-						cBufSize);
-			if (status) {
-				kfree(pHostSysBuf);
-				pHostSysBuf = NULL;
-				status = DSP_EPOINTER;
-				goto func_end;
 			}
 		}
 	}
-func_cont:
 	/* Mailbox IRQ is disabled to avoid race condition with DMA/ZCPY
 	 * channels. DPCCS is held to avoid race conditions with PCPY channels.
 	 * If DPC is scheduled in process context (IO_Schedule) and any
 	 * non-mailbox interrupt occurs, that DPC will run and break CS. Hence
 	 * we disable ALL DPCs. We will try to disable ONLY IO DPC later.  */
 	SYNC_EnterCS(pChnlMgr->hCSObj);
-	omap_mbox_disable_irq(dev_ctxt->mbox, IRQ_RX);
+	disable_irq(MAILBOX_IRQ);
 	if (pChnl->uChnlType == CHNL_PCPY) {
 		/* This is a processor-copy channel. */
 		if (DSP_SUCCEEDED(status) && CHNL_IsOutput(pChnl->uMode)) {
@@ -191,47 +262,48 @@ func_cont:
 		if (pChnl->uChnlType == CHNL_PCPY && pChnl->uId > 1)
 			pChirp->pHostSysBuf = pHostSysBuf;
 
-		/*
-		 * Note: for dma chans dwDspAddr contains dsp address
-		 * of SM buffer.
-		 */
-		DBC_Assert(pChnlMgr->uWordSize != 0);
-		/* DSP address */
-		pChirp->uDspAddr = dwDspAddr / pChnlMgr->uWordSize;
-		pChirp->cBytes = cBytes;
-		pChirp->cBufSize = cBufSize;
-		/* Only valid for output channel */
-		pChirp->dwArg = dwArg;
-		pChirp->status = (fIsEOS ? CHNL_IOCSTATEOS :
-						CHNL_IOCSTATCOMPLETE);
-		LST_PutTail(pChnl->pIORequests, (struct list_head *)pChirp);
-		pChnl->cIOReqs++;
-		DBC_Assert(pChnl->cIOReqs <= pChnl->cChirps);
-		/* If end of stream, update the channel state to prevent
-		 * more IOR's: */
-		if (fIsEOS)
-			pChnl->dwState |= CHNL_STATEEOS;
+		if (DSP_SUCCEEDED(status)) {
+			/* Note: for dma chans dwDspAddr contains dsp address
+			 * of SM buffer.*/
+			DBC_Assert(pChnlMgr->uWordSize != 0);
+			/* DSP address */
+			pChirp->uDspAddr = dwDspAddr / pChnlMgr->uWordSize;
+			pChirp->cBytes = cBytes;
+			pChirp->cBufSize = cBufSize;
+			/* Only valid for output channel */
+			pChirp->dwArg = dwArg;
+			pChirp->status = (fIsEOS ? CHNL_IOCSTATEOS :
+					 CHNL_IOCSTATCOMPLETE);
+			LST_PutTail(pChnl->pIORequests, (struct LST_ELEM *)
+				   pChirp);
+			pChnl->cIOReqs++;
+			DBC_Assert(pChnl->cIOReqs <= pChnl->cChirps);
+			/* If end of stream, update the channel state to prevent
+			 * more IOR's: */
+			if (fIsEOS)
+				pChnl->dwState |= CHNL_STATEEOS;
 
-		/* Legacy DSM Processor-Copy */
-		DBC_Assert(pChnl->uChnlType == CHNL_PCPY);
-		/* Request IO from the DSP */
-		IO_RequestChnl(pChnlMgr->hIOMgr, pChnl,
-			(CHNL_IsInput(pChnl->uMode) ? IO_INPUT : IO_OUTPUT),
-								&wMbVal);
-		fSchedDPC = true;
-
-
+			{
+				/* Legacy DSM Processor-Copy */
+				DBC_Assert(pChnl->uChnlType == CHNL_PCPY);
+				/* Request IO from the DSP */
+				IO_RequestChnl(pChnlMgr->hIOMgr, pChnl,
+					(CHNL_IsInput(pChnl->uMode) ?
+					IO_INPUT : IO_OUTPUT), &wMbVal);
+				fSchedDPC = true;
+			}
+		}
 	}
-	omap_mbox_enable_irq(dev_ctxt->mbox, IRQ_RX);
+	enable_irq(MAILBOX_IRQ);
 	SYNC_LeaveCS(pChnlMgr->hCSObj);
 	if (wMbVal != 0)
 		IO_IntrDSP2(pChnlMgr->hIOMgr, wMbVal);
 
-	/* Schedule a DPC, to do the actual data transfer: */
-	if (fSchedDPC)
+	if (fSchedDPC == true) {
+		/* Schedule a DPC, to do the actual data transfer: */
 		IO_Schedule(pChnlMgr->hIOMgr);
-
-func_end:
+	}
+	DBG_Trace(DBG_ENTER, "< WMD_CHNL_AddIOReq pChnl %p\n", pChnl);
 	return status;
 }
 
@@ -249,12 +321,12 @@ DSP_STATUS WMD_CHNL_CancelIO(struct CHNL_OBJECT *hChnl)
 	DSP_STATUS status = DSP_SOK;
 	struct CHNL_OBJECT *pChnl = (struct CHNL_OBJECT *)hChnl;
 	u32 iChnl = -1;
-	short int uMode;
+	CHNL_MODE uMode;
 	struct CHNL_IRP *pChirp;
 	struct CHNL_MGR *pChnlMgr = NULL;
 
 	/* Check args: */
-	if (MEM_IsValidHandle(pChnl, CHNL_SIGNATURE) && pChnl->pChnlMgr) {
+	if (MEM_IsValidHandle(pChnl, CHNL_SIGNATURE)) {
 		iChnl = pChnl->uId;
 		uMode = pChnl->uMode;
 		pChnlMgr = pChnl->pChnlMgr;
@@ -288,7 +360,7 @@ DSP_STATUS WMD_CHNL_CancelIO(struct CHNL_OBJECT *hChnl)
 			pChirp->cBytes = 0;
 			pChirp->status |= CHNL_IOCSTATCANCEL;
 			LST_PutTail(pChnl->pIOCompletions,
-				   (struct list_head *)pChirp);
+				   (struct LST_ELEM *)pChirp);
 			pChnl->cIOCs++;
 			pChnl->cIOReqs--;
 			DBC_Assert(pChnl->cIOReqs >= 0);
@@ -381,48 +453,58 @@ DSP_STATUS WMD_CHNL_Create(OUT struct CHNL_MGR **phChnlMgr,
 	DSP_STATUS status = DSP_SOK;
 	struct CHNL_MGR *pChnlMgr = NULL;
 	s32 cChannels;
-
+#ifdef DEBUG
+	struct CHNL_MGR *hChnlMgr;
+#endif
 	/* Check DBC requirements:  */
 	DBC_Require(phChnlMgr != NULL);
 	DBC_Require(pMgrAttrs != NULL);
 	DBC_Require(pMgrAttrs->cChannels > 0);
 	DBC_Require(pMgrAttrs->cChannels <= CHNL_MAXCHANNELS);
 	DBC_Require(pMgrAttrs->uWordSize != 0);
-
-	/* Allocate channel manager object: */
-	MEM_AllocObject(pChnlMgr, struct CHNL_MGR, CHNL_MGRSIGNATURE);
-	if (pChnlMgr) {
-		/* The cChannels attr must equal the # of supported
-		 * chnls for each transport(# chnls for PCPY = DDMA =
-		 * ZCPY): i.e. pMgrAttrs->cChannels = CHNL_MAXCHANNELS =
-		 * DDMA_MAXDDMACHNLS = DDMA_MAXZCPYCHNLS.  */
-		DBC_Assert(pMgrAttrs->cChannels == CHNL_MAXCHANNELS);
-		cChannels = CHNL_MAXCHANNELS + CHNL_MAXCHANNELS * CHNL_PCPY;
-		/* Create array of channels: */
-		pChnlMgr->apChannel = MEM_Calloc(
-				sizeof(struct CHNL_OBJECT *) *
-				cChannels, MEM_NONPAGED);
-		if (pChnlMgr->apChannel) {
-			/* Initialize CHNL_MGR object: */
-			/* Shared memory driver. */
-			pChnlMgr->dwType = CHNL_TYPESM;
-			pChnlMgr->uWordSize = pMgrAttrs->uWordSize;
-			/* total # chnls supported */
-			pChnlMgr->cChannels = cChannels;
-			pChnlMgr->cOpenChannels = 0;
-			pChnlMgr->dwOutputMask = 0;
-			pChnlMgr->dwLastOutput = 0;
-			pChnlMgr->hDevObject = hDevObject;
-			if (DSP_SUCCEEDED(status))
-				status = SYNC_InitializeDPCCS(
-							&pChnlMgr->hCSObj);
+#ifdef DEBUG
+	/* This for the purposes of DBC_Require: */
+	status = DEV_GetChnlMgr(hDevObject, &hChnlMgr);
+	DBC_Require(status != DSP_EHANDLE);
+	DBC_Require(hChnlMgr == NULL);
+#endif
+	if (DSP_SUCCEEDED(status)) {
+		/* Allocate channel manager object: */
+		MEM_AllocObject(pChnlMgr, struct CHNL_MGR, CHNL_MGRSIGNATURE);
+		if (pChnlMgr) {
+			/* The cChannels attr must equal the # of supported
+			 * chnls for each transport(# chnls for PCPY = DDMA =
+			 * ZCPY): i.e. pMgrAttrs->cChannels = CHNL_MAXCHANNELS =
+			 * DDMA_MAXDDMACHNLS = DDMA_MAXZCPYCHNLS.  */
+			DBC_Assert(pMgrAttrs->cChannels == CHNL_MAXCHANNELS);
+			cChannels = (CHNL_MAXCHANNELS + (CHNL_MAXCHANNELS *
+				    CHNL_PCPY));
+			/* Create array of channels: */
+			pChnlMgr->apChannel = MEM_Calloc(
+						sizeof(struct CHNL_OBJECT *) *
+						cChannels, MEM_NONPAGED);
+			if (pChnlMgr->apChannel) {
+				/* Initialize CHNL_MGR object: */
+				/* Shared memory driver. */
+				pChnlMgr->dwType = CHNL_TYPESM;
+				pChnlMgr->uWordSize = pMgrAttrs->uWordSize;
+				/* total # chnls supported */
+				pChnlMgr->cChannels = cChannels;
+				pChnlMgr->cOpenChannels = 0;
+				pChnlMgr->dwOutputMask = 0;
+				pChnlMgr->dwLastOutput = 0;
+				pChnlMgr->hDevObject = hDevObject;
+				if (DSP_SUCCEEDED(status)) {
+					status = SYNC_InitializeDPCCS
+						(&pChnlMgr->hCSObj);
+				}
+			} else {
+				status = DSP_EMEMORY;
+			}
 		} else {
 			status = DSP_EMEMORY;
 		}
-	} else {
-		status = DSP_EMEMORY;
 	}
-
 	if (DSP_FAILED(status)) {
 		WMD_CHNL_Destroy(pChnlMgr);
 		*phChnlMgr = NULL;
@@ -447,17 +529,18 @@ DSP_STATUS WMD_CHNL_Destroy(struct CHNL_MGR *hChnlMgr)
 	if (MEM_IsValidHandle(hChnlMgr, CHNL_MGRSIGNATURE)) {
 		/* Close all open channels: */
 		for (iChnl = 0; iChnl < pChnlMgr->cChannels; iChnl++) {
-			status = WMD_CHNL_Close(pChnlMgr->apChannel[iChnl]);
-			if (DSP_FAILED(status))
-				DBG_Trace(DBG_LEVEL7, "Error in CHNL_Close "
-						"status 0x%x\n", status);
+			if (DSP_SUCCEEDED
+			    (WMD_CHNL_Close(pChnlMgr->apChannel[iChnl]))) {
+				DBC_Assert(pChnlMgr->apChannel[iChnl] == NULL);
+			}
 		}
 		/* release critical section */
 		if (pChnlMgr->hCSObj)
 			SYNC_DeleteCS(pChnlMgr->hCSObj);
 
 		/* Free channel manager object: */
-		kfree(pChnlMgr->apChannel);
+		if (pChnlMgr->apChannel)
+			MEM_Free(pChnlMgr->apChannel);
 
 		/* Set hChnlMgr to NULL in device object. */
 		DEV_SetChnlMgr(pChnlMgr->hDevObject, NULL);
@@ -478,7 +561,7 @@ DSP_STATUS WMD_CHNL_FlushIO(struct CHNL_OBJECT *hChnl, u32 dwTimeOut)
 {
 	DSP_STATUS status = DSP_SOK;
 	struct CHNL_OBJECT *pChnl = (struct CHNL_OBJECT *)hChnl;
-	short int uMode = -1;
+	CHNL_MODE uMode = -1;
 	struct CHNL_MGR *pChnlMgr;
 	struct CHNL_IOC chnlIOC;
 	/* Check args:  */
@@ -570,9 +653,10 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 	bool fDequeueIOC = true;
 	struct CHNL_IOC ioc = { NULL, 0, 0, 0, 0 };
 	u8 *pHostSysBuf = NULL;
-	struct WMD_DEV_CONTEXT *dev_ctxt;
-	struct DEV_OBJECT *dev_obj;
 
+	DBG_Trace(DBG_ENTER, "> WMD_CHNL_GetIOC pChnl %p CHNL_IsOutput %x "
+		 "uChnlType %x\n", pChnl, CHNL_IsOutput(pChnl->uMode),
+		 pChnl->uChnlType);
 	/* Check args: */
 	if (pIOC == NULL) {
 		status = DSP_EPOINTER;
@@ -583,12 +667,6 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 			status = CHNL_E_NOIOC;
 
 	}
-
-	dev_obj = DEV_GetFirst();
-	DEV_GetWMDContext(dev_obj, &dev_ctxt);
-	if (!dev_ctxt)
-		status = DSP_EHANDLE;
-
 	if (DSP_FAILED(status))
 		goto func_end;
 
@@ -616,7 +694,7 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 	}
 	/* See comment in AddIOReq */
 	SYNC_EnterCS(pChnl->pChnlMgr->hCSObj);
-	omap_mbox_disable_irq(dev_ctxt->mbox, IRQ_RX);
+	disable_irq(MAILBOX_IRQ);
 	if (fDequeueIOC) {
 		/* Dequeue IOC and set pIOC; */
 		DBC_Assert(!LST_IsEmpty(pChnl->pIOCompletions));
@@ -636,8 +714,8 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 			ioc.dwArg = pChirp->dwArg;
 			ioc.status |= pChirp->status;
 			/* Place the used chirp on the free list: */
-			LST_PutTail(pChnl->pFreeList,
-					(struct list_head *)pChirp);
+			LST_PutTail(pChnl->pFreeList, (struct LST_ELEM *)
+				   pChirp);
 		} else {
 			ioc.pBuf = NULL;
 			ioc.cBytes = 0;
@@ -666,7 +744,7 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 		/* else, if list is empty, ensure event is reset. */
 		SYNC_ResetEvent(pChnl->hSyncEvent);
 	}
-	omap_mbox_enable_irq(dev_ctxt->mbox, IRQ_RX);
+	enable_irq(MAILBOX_IRQ);
 	SYNC_LeaveCS(pChnl->pChnlMgr->hCSObj);
 	if (fDequeueIOC && (pChnl->uChnlType == CHNL_PCPY && pChnl->uId > 1)) {
 		if (!(ioc.pBuf < (void *) USERMODE_ADDR))
@@ -675,6 +753,8 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 		/* If the addr is in user mode, then copy it */
 		if (!pHostSysBuf || !ioc.pBuf) {
 			status = DSP_EPOINTER;
+			DBG_Trace(DBG_LEVEL7,
+				 "System buffer NULL in IO completion.\n");
 			goto func_cont;
 		}
 		if (!CHNL_IsInput(pChnl->uMode))
@@ -682,19 +762,37 @@ DSP_STATUS WMD_CHNL_GetIOC(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 
 		/*pHostUserBuf */
 		status = copy_to_user(ioc.pBuf, pHostSysBuf, ioc.cBytes);
+#ifndef RES_CLEANUP_DISABLE
 		if (status) {
-			if (current->flags & PF_EXITING)
+			if (current->flags & PF_EXITING) {
+				DBG_Trace(DBG_LEVEL7,
+					 "\n2current->flags ==  PF_EXITING, "
+					 " current->flags;0x%x\n",
+					 current->flags);
 				status = 0;
+			} else {
+				DBG_Trace(DBG_LEVEL7,
+					 "\n2current->flags != PF_EXITING, "
+					 " current->flags;0x%x\n",
+					 current->flags);
+			}
 		}
-		if (status)
+#endif
+		if (status) {
+			DBG_Trace(DBG_LEVEL7,
+				 "Error copying kernel buffer to user, %d"
+				 " bytes remaining.  in_interupt %d\n",
+				 status, in_interrupt());
 			status = DSP_EPOINTER;
+		}
 func_cont1:
-		kfree(pHostSysBuf);
+		MEM_Free(pHostSysBuf);
 	}
 func_cont:
 	/* Update User's IOC block: */
 	*pIOC = ioc;
 func_end:
+	DBG_Trace(DBG_ENTER, "< WMD_CHNL_GetIOC pChnl %p\n", pChnl);
 	return status;
 }
 
@@ -738,7 +836,7 @@ DSP_STATUS WMD_CHNL_GetMgrInfo(struct CHNL_MGR *hChnlMgr, u32 uChnlID,
 DSP_STATUS WMD_CHNL_Idle(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
 			 bool fFlush)
 {
-	short int uMode;
+	CHNL_MODE uMode;
 	struct CHNL_MGR *pChnlMgr;
 	DSP_STATUS status = DSP_SOK;
 
@@ -766,7 +864,7 @@ DSP_STATUS WMD_CHNL_Idle(struct CHNL_OBJECT *hChnl, u32 dwTimeOut,
  *      Open a new half-duplex channel to the DSP board.
  */
 DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
-			 struct CHNL_MGR *hChnlMgr, short int uMode,
+			 struct CHNL_MGR *hChnlMgr, CHNL_MODE uMode,
 			 u32 uChnlId, CONST IN struct CHNL_ATTRS *pAttrs)
 {
 	DSP_STATUS status = DSP_SOK;
@@ -777,9 +875,7 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 	/* Ensure DBC requirements:  */
 	DBC_Require(phChnl != NULL);
 	DBC_Require(pAttrs != NULL);
-	DBC_Require(hChnlMgr != NULL);
 	*phChnl = NULL;
-
 	/* Validate Args:  */
 	if (pAttrs->uIOReqs == 0) {
 		status = DSP_EINVALIDARG;
@@ -788,11 +884,12 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 			status = DSP_EHANDLE;
 		} else {
 			if (uChnlId != CHNL_PICKFREE) {
-				if (uChnlId >= pChnlMgr->cChannels)
+				if (uChnlId >= pChnlMgr->cChannels) {
 					status = CHNL_E_BADCHANID;
-				else if (pChnlMgr->apChannel[uChnlId] !=
-					  NULL)
+				} else if (pChnlMgr->apChannel[uChnlId] !=
+					  NULL) {
 					status = CHNL_E_CHANBUSY;
+				}
 			} else {
 				/* Check for free channel */
 				status = SearchFreeChannel(pChnlMgr, &uChnlId);
@@ -807,7 +904,7 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 	MEM_AllocObject(pChnl, struct CHNL_OBJECT, 0x0000);
 	if (!pChnl) {
 		status = DSP_EMEMORY;
-		goto func_end;
+		goto func_cont;
 	}
 	/* Protect queues from IO_DPC: */
 	pChnl->dwState = CHNL_STATECANCEL;
@@ -819,9 +916,13 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 	pChnl->cIOCs = 0;
 	pChnl->cIOReqs = 0;
 	status = SYNC_OpenEvent(&hSyncEvent, pSyncAttrs);
-	if (DSP_SUCCEEDED(status))
+	if (DSP_SUCCEEDED(status)) {
 		status = NTFY_Create(&pChnl->hNtfy);
-
+		if (DSP_FAILED(status)) {
+			/* The only failure that could have occurred */
+			status = DSP_EMEMORY;
+		}
+	}
 	if (DSP_SUCCEEDED(status)) {
 		if (pChnl->pIOCompletions && pChnl->pIORequests &&
 		   pChnl->pFreeList) {
@@ -831,7 +932,7 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 			pChnl->uMode = uMode;
 			pChnl->hUserEvent = hSyncEvent;	/* for Linux */
 			pChnl->hSyncEvent = hSyncEvent;
-			/* Get the process handle */
+                       /* get the process handle */
 			pChnl->hProcess = current->tgid;
 			pChnl->pCBArg = 0;
 			pChnl->cBytesMoved = 0;
@@ -840,8 +941,9 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 		} else {
 			status = DSP_EMEMORY;
 		}
+	} else {
+		status = DSP_EINVALIDARG;
 	}
-
 	if (DSP_FAILED(status)) {
 		/* Free memory */
 		if (pChnl->pIOCompletions) {
@@ -866,7 +968,9 @@ DSP_STATUS WMD_CHNL_Open(OUT struct CHNL_OBJECT **phChnl,
 			pChnl->hNtfy = NULL;
 		}
 		MEM_FreeObject(pChnl);
-	} else {
+	}
+func_cont:
+	if (DSP_SUCCEEDED(status)) {
 		/* Insert channel object in channel manager: */
 		pChnlMgr->apChannel[pChnl->uId] = pChnl;
 		SYNC_EnterCS(pChnlMgr->hCSObj);
@@ -919,14 +1023,13 @@ static struct LST_LIST *CreateChirpList(u32 uChirps)
 	struct CHNL_IRP *pChirp;
 	u32 i;
 
-	pChirpList = MEM_Calloc(sizeof(struct LST_LIST), MEM_NONPAGED);
+	pChirpList = LST_Create();
 
 	if (pChirpList) {
-		INIT_LIST_HEAD(&pChirpList->head);
 		/* Make N chirps and place on queue. */
 		for (i = 0; (i < uChirps) && ((pChirp = MakeNewChirp()) !=
 		    NULL); i++) {
-			LST_PutTail(pChirpList, (struct list_head *)pChirp);
+			LST_PutTail(pChirpList, (struct LST_ELEM *)pChirp);
 		}
 
 		/* If we couldn't allocate all chirps, free those allocated: */
@@ -949,9 +1052,9 @@ static void FreeChirpList(struct LST_LIST *pChirpList)
 	DBC_Require(pChirpList != NULL);
 
 	while (!LST_IsEmpty(pChirpList))
-		kfree(LST_GetHead(pChirpList));
+		MEM_Free(LST_GetHead(pChirpList));
 
-	kfree(pChirpList);
+	LST_Delete(pChirpList);
 }
 
 /*

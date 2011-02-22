@@ -14,16 +14,25 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-/*
- * There are two definitions that affect which portions of trace
- * are acutally compiled into the client: GT_TRACE and GT_ASSERT. If
- * GT_TRACE is set to 0 then all trace statements (except for assertions)
- * will be compiled out of the client. If GT_ASSERT is set to 0 then
- * assertions will be compiled out of the client. GT_ASSERT can not be
- * set to 0 unless GT_TRACE is also set to 0 (i.e. GT_TRACE == 1 implies
- * GT_ASSERT == 1).
- */
 
+/*
+ *  ======== gt.h ========
+ *  Purpose:
+ *      There are two definitions that affect which portions of trace
+ *      are acutally compiled into the client: GT_TRACE and GT_ASSERT. If
+ *      GT_TRACE is set to 0 then all trace statements (except for assertions)
+ *      will be compiled out of the client. If GT_ASSERT is set to 0 then
+ *      assertions will be compiled out of the client. GT_ASSERT can not be
+ *      set to 0 unless GT_TRACE is also set to 0 (i.e. GT_TRACE == 1 implies
+ *      GT_ASSERT == 1).
+ *
+ *! Revision History
+ *! ================
+ *! 02-Feb-2000 rr: Renamed this file to gtce.h. GT CLASS and trace definitions
+ *!                 are WinCE Specific.
+ *! 03-Jan-1997	ge	Replaced "GT_" prefix to GT_Config structure members
+ *!                 to eliminate preprocessor confusion with other macros.
+ */
 #include <linux/types.h>
 #ifndef GT_
 #define GT_
@@ -232,7 +241,7 @@ extern struct GT_Config _GT_params;
 
 #define GT_assert(mask, expr) \
 	(!(expr) ? \
-	    pr_err("assertion violation: %s, line %d\n", \
+	    printk("assertion violation: %s, line %d\n", \
 			    __FILE__, __LINE__), NULL : NULL)
 
 #define GT_config(config)     (_GT_params = *(config))
@@ -252,15 +261,13 @@ extern struct GT_Config _GT_params;
 
 #define GT_query(mask, class)     false
 
-#define GT_0trace(mask, class, format) do {} while (0)
-#define GT_1trace(mask, class, format, arg1) do {} while (0)
-#define GT_2trace(mask, class, format, arg1, arg2) do {} while (0)
-#define GT_3trace(mask, class, format, arg1, arg2, arg3) do {} while (0)
-#define GT_4trace(mask, class, format, arg1, arg2, arg3, arg4) do {} while (0)
-#define GT_5trace(mask, class, format, arg1, arg2, arg3, arg4, arg5) \
-	do {} while (0)
-#define GT_6trace(mask, class, format, arg1, arg2, arg3, arg4, arg5, arg6) \
-	do {} while (0)
+#define GT_0trace(mask, class, format)
+#define GT_1trace(mask, class, format, arg1)
+#define GT_2trace(mask, class, format, arg1, arg2)
+#define GT_3trace(mask, class, format, arg1, arg2, arg3)
+#define GT_4trace(mask, class, format, arg1, arg2, arg3, arg4)
+#define GT_5trace(mask, class, format, arg1, arg2, arg3, arg4, arg5)
+#define GT_6trace(mask, class, format, arg1, arg2, arg3, arg4, arg5, arg6)
 
 #else				/* GT_TRACE == 1 */
 
