@@ -136,7 +136,7 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 
 #ifdef CONFIG_MACH_OMAP3621_EVT1A
 	policy->cur = policy->min = policy->max = 800000;
-#elif
+#else
     policy->cur = policy->min = policy->max = omap_getspeed(0);
 #endif
 
@@ -159,7 +159,7 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 #ifdef CONFIG_MACH_OMAP3621_EVT1A
 	policy->max = 800000;
 	policy->cur = 800000;
-#elif
+#else
 	policy->max = policy->cpuinfo.max_freq;
 	policy->cur = omap_getspeed(0);
 #endif
