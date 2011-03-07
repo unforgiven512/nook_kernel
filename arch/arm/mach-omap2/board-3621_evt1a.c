@@ -80,7 +80,7 @@
 #include <mach/display.h>
 #include <linux/i2c/twl4030.h>
 
-#include <linux/usb/android.h>
+#include <linux/usb/android_composite.h>
 
 #include "mmc-twl4030.h"
 #include "omap3-opp.h"
@@ -1259,6 +1259,7 @@ static struct usb_mass_storage_platform_data mass_storage_pdata = {
 	.vendor = "B&N     ",
 	.product = "Ebook Disk      ",
 	.release = 0x0100,
+	.nluns = 2
 };
 
 static struct platform_device usb_mass_storage_device = {
@@ -1272,19 +1273,72 @@ static struct platform_device usb_mass_storage_device = {
 // Reserved for serial number passed in from the bootloader.
 static char adb_serial_number[32] = "";
 
+static char *usb_functions_ums[] = {
+	"usb_mass_storage",
+};
+
+static char *usb_functions_ums_adb[] = {
+	"usb_mass_storage",
+	"adb",
+};
+
+static char *usb_functions_rndis[] = {
+	"rndis",
+};
+
+static char *usb_functions_rndis_adb[] = {
+	"rndis",
+	"adb",
+};
+
+static char *usb_functions_all[] = {
+#ifdef CONFIG_USB_ANDROID_RNDIS
+	"rndis",
+#endif
+	"usb_mass_storage",
+	"adb",
+#ifdef CONFIG_USB_ANDROID_ACM
+	"acm",
+#endif
+};
+
+static struct android_usb_product usb_products[] = {
+	{
+		.product_id	= ENCORE_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_ums),
+		.functions	= usb_functions_ums,
+	},
+	{
+		.product_id	= ENCORE_ADB_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_ums_adb),
+		.functions	= usb_functions_ums_adb,
+	},
+	{
+		.product_id	= ENCORE_RNDIS_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_rndis),
+		.functions	= usb_functions_rndis,
+	},
+	{
+		.product_id	= ENCORE_RNDIS_ADB_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_rndis_adb),
+		.functions	= usb_functions_rndis_adb,
+	},
+};
+
 static struct android_usb_platform_data android_usb_pdata = {
-	.vendor_id	= BN_USB_VENDOR_ID,
-	.product_id	= BN_USB_PRODUCT_ID_ENCORE,
-	.adb_product_id	= 0x0002,
-	.version	= 0x0100,
-	.product_name	= "NookColor",
+	.vendor_id	= ENCORE_VENDOR_ID,
+	.product_id	= ENCORE_PRODUCT_ID,
 	.manufacturer_name = "B&N",
+	.product_name	= "NookColor",
 	.serial_number	= "11223344556677",
-	.nluns = 2,
+	.num_products   = ARRAY_SIZE(usb_products),
+	.products	= usb_products,
+	.num_functions	= ARRAY_SIZE(usb_functions_all),
+	.functions	= usb_functions_all,
 };
 
 static struct platform_device android_usb_device = {
-	.name	= "android_usb",
+	.name		= "android_usb",
 	.id		= -1,
 	.dev		= {
 		.platform_data = &android_usb_pdata,
