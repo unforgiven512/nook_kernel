@@ -555,7 +555,7 @@ CONFIG_ANDROID_PMEM=y
 CONFIG_WL127X_RFKILL=y
 # CONFIG_APANIC is not set
 CONFIG_APANIC_PLABEL="kpanic"
-CONFIG_BUILD_TI_ST=y
+# CONFIG_BUILD_TI_ST is not set
 # CONFIG_MAX9635 is not set
 # CONFIG_C2PORT is not set
 
@@ -570,8 +570,8 @@ CONFIG_BUILD_TI_ST=y
 #
 # Texas Instruments shared transport line discipline
 #
-CONFIG_TI_ST=y
-CONFIG_TI_ST_BT=y
+# CONFIG_TI_ST is not set
+# CONFIG_TI_ST_BT is not set
 # CONFIG_TI_ST_FM is not set
 # CONFIG_TI_ST_GPS is not set
 CONFIG_HAVE_IDE=y

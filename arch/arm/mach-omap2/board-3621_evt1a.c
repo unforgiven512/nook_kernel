@@ -1444,6 +1444,7 @@ static void __init omap_boxer_init(void)
 	omap_serial_init();
 	usb_musb_init();
 	boxer_backlight_init();
+    omap_cfg_reg(AE35_34XX_GPIO60_OUTPUT); // set up BT enable as GPIO output
 #if defined(CONFIG_USB_ANDROID) || defined(CONFIG_USB_ANDROID_MODULE)
 	platform_device_register(&usb_mass_storage_device);
 	// Set the device serial number passed in from the bootloader.

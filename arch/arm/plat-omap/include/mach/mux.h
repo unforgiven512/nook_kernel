@@ -966,6 +966,9 @@ enum omap34xx_index {
 
 	/* PWM */
 	N8_34XX_GPIO58_PWM,
+
+    /* encore WL127x BT enable*/
+    AE35_34XX_GPIO60_OUTPUT,
 };
 
 struct omap_mux_cfg {
