@@ -1,4 +1,3 @@
-
 /*
  *
  * Copyright (C) 2008 Texas Instruments Inc.
@@ -137,10 +136,9 @@
 #define BOXER_EXT_QUART_SIZE	SZ_256
 
 #ifdef CONFIG_WL127X_RFKILL
-#if 0
 static struct wl127x_rfkill_platform_data wl127x_plat_data = {
-	.bt_nshutdown_gpio = 109,	/* UART_GPIO (spare) Enable GPIO */
-	.fm_enable_gpio = 161,		/* FM Enable GPIO */
+	.bt_nshutdown_gpio = 60,	/* UART_GPIO (spare) Enable GPIO */
+	.fm_enable_gpio = -1,		/* FM Enable GPIO */
 };
 
 static struct platform_device boxer_wl127x_device = {
@@ -148,7 +146,6 @@ static struct platform_device boxer_wl127x_device = {
 	.id             = -1,
 	.dev.platform_data = &wl127x_plat_data,
 };
-#endif
 #endif
 
 
@@ -610,7 +607,7 @@ static struct platform_device *boxer_devices[] __initdata = {
 	&boxer_backlight_led_device,
 	&boxer_keys_gpio,
 #ifdef CONFIG_WL127X_RFKILL
-//	&boxer_wl127x_device,
+	&boxer_wl127x_device,
 #endif
 	&boxer_vout_device,
 #ifdef CONFIG_REGULATOR_MAXIM_CHARGER
