@@ -2588,7 +2588,7 @@ static int process_backlog(struct napi_struct *napi, int quota)
 		local_irq_disable();
 		skb = __skb_dequeue(&queue->input_pkt_queue);
 		if (!skb) {
-			napi_complete(napi);
+			__napi_complete(napi);
 			local_irq_enable();
 			break;
 		}
