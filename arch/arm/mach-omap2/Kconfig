@@ -153,6 +153,20 @@ config MACH_OMAP3621_EVT1A
 	bool "OMAP3621 BOXER board revision EVT1A"
 	depends on ARCH_OMAP3 && ARCH_OMAP34XX
 
+choice
+    bool "Encore overclocking"
+    depends on MACH_OMAP3621_EVT1A
+
+config ENCORE_MPU_1100MHZ
+    bool "Overclock MPU up to 1100mhz"
+    depends on MACH_OMAP3621_EVT1A
+
+config ENCORE_MPU_1150MHZ
+    bool "Overclock MPU up to 1150mhz"
+    depends on MACH_OMAP3621_EVT1A
+
+endchoice
+
 config MACH_OMAP_ZOOM3
 	bool "OMAP3 ZOOM3 board"
 	depends on ARCH_OMAP3 && ARCH_OMAP34XX
