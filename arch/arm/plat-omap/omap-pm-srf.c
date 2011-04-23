@@ -415,7 +415,11 @@ u8 omap_pm_get_max_vdd1_opp()
   if (cpu_is_omap3621())
     return VDD1_OPP3;
 	else if (cpu_is_omap3630()) {
+#ifndef CONFIG_ENCORE_MPU_800MHZ
 	  return VDD1_OPP5;
+#else
+         return VDD1_OPP3;
+#endif
 	  /*
 		switch (omap_rev_id()) {
 		case OMAP_3630:

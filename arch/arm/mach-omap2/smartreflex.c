@@ -353,6 +353,7 @@ static void sr_add_margin_steps(struct omap_sr *sr)
 /* Hard coded nvalues for testing purposes, may cause device to hang! */
 static void sr_set_testing_nvalues(struct omap_sr *sr)
 {
+    printk("SR: Enter testing values\n");
 	if (sr->srid == SR1) {
 		if (cpu_is_omap3630()) {
 			sr->senp_mod = 0x1;
@@ -364,7 +365,12 @@ static void sr_set_testing_nvalues(struct omap_sr *sr)
 			sr->opp3_nvalue = cal_test_nvalue(1405, 1200);
 #if !(cpu_is_omap3621())
 			sr->opp4_nvalue = cal_test_nvalue(1842, 1580);
-			sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
+#ifdef CONFIG_ENCORE_MPU_1300MHZ
+			sr->opp5_nvalue = cal_test_nvalue(2300, 1950);
+            printk("SR: OPP5 nvalue set\n");
+#else
+            sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
+#endif
 #endif
 			if (sr_margin_steps || sr_margin_steps_1g)
 				sr_add_margin_steps(sr);
@@ -473,6 +479,9 @@ static void sr_set_efuse_nvalues(struct omap_sr *sr)
 
 			sr->opp3_nvalue = sr1_opp[3] =
 			   omap_ctrl_readl(OMAP36XX_CONTROL_FUSE_OPP3_VDD1);
+            printk("*****Smartreflex e-fuse nvalue opp3: %x\n", sr->opp3_nvalue);
+
+
 			if (sr->opp3_nvalue != 0x0) {
 				pr_info("SR1:Fused Nvalues for VDD1OPP3 %x\n",
 							sr->opp3_nvalue);
