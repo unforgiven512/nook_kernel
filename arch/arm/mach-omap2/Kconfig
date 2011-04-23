@@ -157,12 +157,16 @@ choice
     bool "Encore overclocking"
     depends on MACH_OMAP3621_EVT1A
 
+config ENCORE_MPU_800MHZ
+    bool "Stock clock"
+    depends on MACH_OMAP3621_EVT1A
+
 config ENCORE_MPU_1100MHZ
     bool "Overclock MPU up to 1100mhz"
     depends on MACH_OMAP3621_EVT1A
 
-config ENCORE_MPU_1150MHZ
-    bool "Overclock MPU up to 1150mhz"
+config ENCORE_MPU_1300MHZ
+    bool "Overclock MPU up to 1300mhz"
     depends on MACH_OMAP3621_EVT1A
 
 endchoice
