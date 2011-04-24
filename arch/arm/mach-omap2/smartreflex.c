@@ -369,7 +369,7 @@ static void sr_set_testing_nvalues(struct omap_sr *sr)
 			sr->opp5_nvalue = cal_test_nvalue(2350, 1950);
             printk("SR: Boosted OPP4 and OPP5 nvalues set\n");
 #else
-            sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
+            sr->opp4_nvalue = cal_test_nvalue(1842, 1580);
             sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
 #endif
 #endif
