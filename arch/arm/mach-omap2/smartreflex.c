@@ -364,11 +364,12 @@ static void sr_set_testing_nvalues(struct omap_sr *sr)
 			sr->opp2_nvalue = cal_test_nvalue(1072, 910);
 			sr->opp3_nvalue = cal_test_nvalue(1405, 1200);
 #if !(cpu_is_omap3621())
-			sr->opp4_nvalue = cal_test_nvalue(1842, 1580);
 #ifdef CONFIG_ENCORE_MPU_1300MHZ
-			sr->opp5_nvalue = cal_test_nvalue(2300, 1950);
-            printk("SR: OPP5 nvalue set\n");
+			sr->opp4_nvalue = cal_test_nvalue(2350, 1950);
+			sr->opp5_nvalue = cal_test_nvalue(2350, 1950);
+            printk("SR: Boosted OPP4 and OPP5 nvalues set\n");
 #else
+            sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
             sr->opp5_nvalue = cal_test_nvalue(1842, 1580);
 #endif
 #endif
