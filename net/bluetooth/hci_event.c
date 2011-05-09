@@ -1,6 +1,6 @@
 /*
    BlueZ - Bluetooth protocol stack for Linux
-   Copyright (C) 2000-2001 Qualcomm Incorporated
+   Copyright (c) 2000-2001, 2010, Code Aurora Forum. All rights reserved.
 
    Written 2000,2001 by Maxim Krasnyansky <maxk@qualcomm.com>
 
@@ -23,7 +23,7 @@
 */
 
 /* Bluetooth HCI event handling. */
-
+#define DEBUG
 #include <linux/module.h>
 
 #include <linux/types.h>
@@ -785,8 +785,12 @@ static void hci_cs_sniff_mode(struct hci_dev *hdev, __u8 status)
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_handle(hdev, __le16_to_cpu(cp->handle));
-	if (conn)
+	if (conn) {
 		clear_bit(HCI_CONN_MODE_CHANGE_PEND, &conn->pend);
+
+		if (test_and_clear_bit(HCI_CONN_SCO_SETUP_PEND, &conn->pend))
+			hci_sco_setup(conn, status);
+	}
 
 	hci_dev_unlock(hdev);
 }
@@ -808,8 +812,12 @@ static void hci_cs_exit_sniff_mode(struct hci_dev *hdev, __u8 status)
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_handle(hdev, __le16_to_cpu(cp->handle));
-	if (conn)
+	if (conn) {
 		clear_bit(HCI_CONN_MODE_CHANGE_PEND, &conn->pend);
+
+		if (test_and_clear_bit(HCI_CONN_SCO_SETUP_PEND, &conn->pend))
+			hci_sco_setup(conn, status);
+	}
 
 	hci_dev_unlock(hdev);
 }
@@ -862,20 +870,25 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 	struct hci_conn *conn;
 
 	BT_DBG("%s", hdev->name);
-
+printk("FT: A");
 	hci_dev_lock(hdev);
-
+printk("FT: B");
 	conn = hci_conn_hash_lookup_ba(hdev, ev->link_type, &ev->bdaddr);
+printk("FT: C");
 	if (!conn) {
+printk("FT: E");
 		if (ev->link_type != SCO_LINK)
 			goto unlock;
+printk("FT: E");
 
 		conn = hci_conn_hash_lookup_ba(hdev, ESCO_LINK, &ev->bdaddr);
 		if (!conn)
 			goto unlock;
+printk("FT: F");
 
 		conn->type = SCO_LINK;
 	}
+printk("FT: G");
 
 	if (!ev->status) {
 		conn->handle = __le16_to_cpu(ev->handle);
@@ -886,23 +899,31 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 			conn->disc_timeout = HCI_DISCONN_TIMEOUT;
 		} else
 			conn->state = BT_CONNECTED;
+printk("FT: H");
 
 		hci_conn_hold_device(conn);
+printk("FT: H.1");
 		hci_conn_add_sysfs(conn);
+printk("FT: I");
 
 		if (test_bit(HCI_AUTH, &hdev->flags))
 			conn->link_mode |= HCI_LM_AUTH;
-
+printk("FT:I.1");
 		if (test_bit(HCI_ENCRYPT, &hdev->flags))
 			conn->link_mode |= HCI_LM_ENCRYPT;
-
+printk("FT:I.2");
 		/* Get remote features */
 		if (conn->type == ACL_LINK) {
+printk("FT:I.3");
 			struct hci_cp_read_remote_features cp;
+printk("FT:I.4");
 			cp.handle = ev->handle;
+printk("FT:I.5");
 			hci_send_cmd(hdev, HCI_OP_READ_REMOTE_FEATURES,
 							sizeof(cp), &cp);
+printk("FT:I.6");
 		}
+printk("FT: J");
 
 		/* Set packet type for incoming connection */
 		if (!conn->out && hdev->hci_ver < 3) {
@@ -911,33 +932,25 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 			cp.pkt_type = cpu_to_le16(conn->pkt_type);
 			hci_send_cmd(hdev, HCI_OP_CHANGE_CONN_PTYPE,
 							sizeof(cp), &cp);
+printk("FT: K");
 		}
 	} else
 		conn->state = BT_CLOSED;
+printk("FT: L");
 
-	if (conn->type == ACL_LINK) {
-		struct hci_conn *sco = conn->link;
-		if (sco) {
-			if (!ev->status) {
-				if (lmp_esco_capable(hdev))
-					hci_setup_sync(sco, conn->handle);
-				else
-					hci_add_sco(sco, conn->handle);
-			} else {
-				hci_proto_connect_cfm(sco, ev->status);
-				hci_conn_del(sco);
-			}
-		}
-	}
+	if (conn->type == ACL_LINK)
+		hci_sco_setup(conn, ev->status);
 
 	if (ev->status) {
 		hci_proto_connect_cfm(conn, ev->status);
 		hci_conn_del(conn);
 	} else if (ev->link_type != ACL_LINK)
 		hci_proto_connect_cfm(conn, ev->status);
+printk("FT: M");
 
 unlock:
 	hci_dev_unlock(hdev);
+printk("FT: N");
 
 	hci_conn_check_pending(hdev);
 }
@@ -1051,6 +1064,8 @@ static inline void hci_auth_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 	if (conn) {
 		if (!ev->status)
 			conn->link_mode |= HCI_LM_AUTH;
+		else
+			conn->sec_level = BT_SECURITY_LOW;
 
 		clear_bit(HCI_CONN_AUTH_PEND, &conn->pend);
 
@@ -1322,7 +1337,7 @@ static inline void hci_cmd_complete_evt(struct hci_dev *hdev, struct sk_buff *sk
 	if (ev->ncmd) {
 		atomic_set(&hdev->cmd_cnt, 1);
 		if (!skb_queue_empty(&hdev->cmd_q))
-			hci_sched_cmd(hdev);
+			tasklet_schedule(&hdev->cmd_task);
 	}
 }
 
@@ -1388,7 +1403,7 @@ static inline void hci_cmd_status_evt(struct hci_dev *hdev, struct sk_buff *skb)
 	if (ev->ncmd) {
 		atomic_set(&hdev->cmd_cnt, 1);
 		if (!skb_queue_empty(&hdev->cmd_q))
-			hci_sched_cmd(hdev);
+			tasklet_schedule(&hdev->cmd_task);
 	}
 }
 
@@ -1456,7 +1471,7 @@ static inline void hci_num_comp_pkts_evt(struct hci_dev *hdev, struct sk_buff *s
 		}
 	}
 
-	hci_sched_tx(hdev);
+	tasklet_schedule(&hdev->tx_task);
 
 	tasklet_enable(&hdev->tx_task);
 }
@@ -1481,6 +1496,9 @@ static inline void hci_mode_change_evt(struct hci_dev *hdev, struct sk_buff *skb
 			else
 				conn->power_save = 0;
 		}
+
+		if (test_and_clear_bit(HCI_CONN_SCO_SETUP_PEND, &conn->pend))
+			hci_sco_setup(conn, ev->status);
 	}
 
 	hci_dev_unlock(hdev);
@@ -1701,8 +1719,9 @@ static inline void hci_sync_conn_complete_evt(struct hci_dev *hdev, struct sk_bu
 		break;
 
 	case 0x10:	/* Connection Accept Timeout */
+	case 0x11:	/* Unsupported Feature or Parameter Value */
 	case 0x1c:	/* SCO interval rejected */
-	case 0x1a:	/* unsupported feature */
+	case 0x1a:	/* Unsupported Remote Feature */
 	case 0x1f:	/* Unspecified error */
 		if (conn->out && conn->attempt < 2) {
 			conn->pkt_type = (hdev->esco_type & SCO_ESCO_MASK) |
@@ -1824,51 +1843,59 @@ static inline void hci_remote_host_features_evt(struct hci_dev *hdev, struct sk_
 
 void hci_event_packet(struct hci_dev *hdev, struct sk_buff *skb)
 {
+printk("FT: 1");
 	struct hci_event_hdr *hdr = (void *) skb->data;
 	__u8 event = hdr->evt;
-
+printk("FT: 2");
 	skb_pull(skb, HCI_EVENT_HDR_SIZE);
-
+printk("FT: 3");
 	switch (event) {
 	case HCI_EV_INQUIRY_COMPLETE:
 		hci_inquiry_complete_evt(hdev, skb);
 		break;
-
+printk("FT: 4");
 	case HCI_EV_INQUIRY_RESULT:
 		hci_inquiry_result_evt(hdev, skb);
 		break;
-
+printk("FT: 5");
 	case HCI_EV_CONN_COMPLETE:
 		hci_conn_complete_evt(hdev, skb);
 		break;
-
+printk("FT: 6");
 	case HCI_EV_CONN_REQUEST:
 		hci_conn_request_evt(hdev, skb);
 		break;
+printk("FT: 7");
 
 	case HCI_EV_DISCONN_COMPLETE:
 		hci_disconn_complete_evt(hdev, skb);
 		break;
+printk("FT: 8");
 
 	case HCI_EV_AUTH_COMPLETE:
 		hci_auth_complete_evt(hdev, skb);
 		break;
+printk("FT: 9");
 
 	case HCI_EV_REMOTE_NAME:
 		hci_remote_name_evt(hdev, skb);
 		break;
+printk("FT: 10");
 
 	case HCI_EV_ENCRYPT_CHANGE:
 		hci_encrypt_change_evt(hdev, skb);
 		break;
+printk("FT: 11");
 
 	case HCI_EV_CHANGE_LINK_KEY_COMPLETE:
 		hci_change_link_key_complete_evt(hdev, skb);
 		break;
+printk("FT: 12");
 
 	case HCI_EV_REMOTE_FEATURES:
 		hci_remote_features_evt(hdev, skb);
 		break;
+printk("FT: 13");
 
 	case HCI_EV_REMOTE_VERSION:
 		hci_remote_version_evt(hdev, skb);
@@ -1957,14 +1984,15 @@ void hci_event_packet(struct hci_dev *hdev, struct sk_buff *skb)
 	case HCI_EV_REMOTE_HOST_FEATURES:
 		hci_remote_host_features_evt(hdev, skb);
 		break;
-
+printk("FT: 97");
 	default:
 		BT_DBG("%s event 0x%x", hdev->name, event);
 		break;
 	}
-
+printk("FT: 98");
 	kfree_skb(skb);
 	hdev->stat.evt_rx++;
+printk("FT: 99");
 }
 
 /* Generate internal stack event */
@@ -1994,3 +2022,4 @@ void hci_si_event(struct hci_dev *hdev, int type, int dlen, void *data)
 	hci_send_to_sock(hdev, skb);
 	kfree_skb(skb);
 }
+

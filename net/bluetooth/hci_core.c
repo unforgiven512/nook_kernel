@@ -23,7 +23,7 @@
 */
 
 /* Bluetooth HCI core. */
-
+#define DEBUG
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/kmod.h>
@@ -1570,7 +1570,9 @@ static void hci_rx_task(unsigned long arg)
 		/* Process frame */
 		switch (bt_cb(skb)->pkt_type) {
 		case HCI_EVENT_PKT:
+			printk("fattire: HCI EvENT PACKET STARTING");
 			hci_event_packet(hdev, skb);
+			printk("fattire: HCI EVENT PACKET DONE");
 			break;
 
 		case HCI_ACLDATA_PKT:
