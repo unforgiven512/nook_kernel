@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32.9
-# Sun May 15 20:41:18 2011
+# Mon May 23 00:33:15 2011
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -366,8 +366,8 @@ CONFIG_ALIGNMENT_TRAP=y
 #
 CONFIG_ZBOOT_ROM_TEXT=0x0
 CONFIG_ZBOOT_ROM_BSS=0x0
-CONFIG_CMDLINE="root=/dev/nfs nfsroot=192.168.0.1:/home/user/buildroot ip=192.168.0.2:192.168.0.1:192.168.0.1:255.255.255.0:tgt:eth0:off rw console=ttyS2,115200n8"
-# CONFIG_IGNORE_BOOT_ARGS is not set
+CONFIG_CMDLINE="console=ttyO0,115200n8 rw init=/init videoout=omap24xxvout omap_vout_mod.video1_numbuffers=6 omap_vout_mod.vid1_static_vrfb_alloc=y omap_vout_mod.video2_numbuffers=6 omap_vout_mod.vid2_static_vrfb_alloc=y omapfb.vram=0:8M no_console_suspend"
+CONFIG_IGNORE_BOOT_ARGS=y
 # CONFIG_XIP_KERNEL is not set
 # CONFIG_KEXEC is not set
 
