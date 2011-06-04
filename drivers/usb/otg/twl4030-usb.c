@@ -255,6 +255,9 @@
 #define TPS65921_ACCIMR1		0x06
 #define TPS65921_USB_CHRG_TYPE_ISR1	(1 << 0)
 
+#define TWL_PWR_EXT 1
+#define TWL_PWR_INT 0
+
 struct twl4030_usb {
 	struct otg_transceiver	otg;
 	struct device		*dev;
@@ -283,7 +286,8 @@ struct twl4030_usb {
 #ifdef CONFIG_CHARGER_MAX8903
 	struct delayed_work     max8903_detect_work;
 #endif
-	
+	int			powersource;
+	int			forcepower;
 };
 
 static struct wake_lock usb_lock;
@@ -737,6 +741,68 @@ static ssize_t twl4030_usb_vbus_show(struct device *dev,
 }
 static DEVICE_ATTR(vbus, 0444, twl4030_usb_vbus_show, NULL);
 
+void max8903_enable_charge(u8 enable);
+int max8903_check_power(void);
+
+static ssize_t twl4030_usb_vbussrc_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct twl4030_usb *twl = dev_get_drvdata(dev);
+	int ret;
+
+	if (twl->forcepower == TWL_PWR_EXT)
+		ret = sprintf(buf, "forced external\n");
+	else
+		ret = sprintf(buf, "%s\n", twl->powersource == TWL_PWR_EXT?
+			      "external":"internal");
+
+	return ret;
+}
+
+static ssize_t twl4030_usb_vbussrc_set(struct device *dev,
+        struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct twl4030_usb *twl = dev_get_drvdata(dev);
+
+	if (count < 8)
+		return -EINVAL;
+
+        if (!strncmp(buf, "external", 8)) {
+		if (twl->forcepower == TWL_PWR_EXT)
+			return count;
+                twl->forcepower = TWL_PWR_EXT;
+		twl4030_usb_clear_bits(twl,TWL4030_OTG_CTRL,
+				       TWL4030_OTG_CTRL_DRVVBUS);
+		if (twl_forcelink) {
+			max8903_enable_charge(1);
+			twl->powersource = TWL_PWR_EXT;
+		}
+        } else if (!strncmp(buf, "internal", 8)) {
+		if (twl->forcepower == TWL_PWR_INT)
+			return count;
+
+		if ((twl->powersource == TWL_PWR_EXT) &&
+		    (twl->forcepower != TWL_PWR_EXT)) {
+			printk("Ignoring switch to internal vbus request, there"
+			       " is external vbus source already!\n");
+			return -EINVAL;
+		}
+                twl->forcepower = TWL_PWR_INT;
+		if (twl_forcelink) {
+			max8903_enable_charge(0);
+			twl4030_usb_set_bits(twl,TWL4030_OTG_CTRL,
+					     TWL4030_OTG_CTRL_DRVVBUS);
+			twl->powersource = TWL_PWR_INT;
+		}
+        } else {
+		return -EINVAL;
+	}
+
+        return count;
+}
+static DEVICE_ATTR(vbussrc, 0644, twl4030_usb_vbussrc_show,
+		   twl4030_usb_vbussrc_set);
+
 static void twl4030_irq_work(struct work_struct *work)
 {
 	struct twl4030_usb *twl = container_of(work, struct twl4030_usb, irq_work);
@@ -806,14 +872,22 @@ void twl4030_kick_work(struct work_struct *work)
 
 	if (!twl_forcelink) {
 		twl4030_usb_clear_bits(twl,TWL4030_OTG_CTRL, TWL4030_OTG_CTRL_DRVVBUS);
-		/* Some sleep to hopefully let usb driver to notice the
- 		 * disappearance */
-		msleep(100);
 		twl4030_usb_irq(0, twl);
 		return;
 	}
 
-	twl4030_usb_set_bits(twl,TWL4030_OTG_CTRL, TWL4030_OTG_CTRL_DRVVBUS);
+#ifdef CONFIG_MACH_OMAP3621_EVT1A
+	/* See if there is power already, then no need to turn on our own */
+	if (twl->forcepower == TWL_PWR_EXT || max8903_check_power()) {
+		twl->powersource = TWL_PWR_EXT;
+		max8903_enable_charge(1);
+	} else
+#endif
+	{
+		twl->powersource = TWL_PWR_INT;
+		twl4030_usb_set_bits(twl,TWL4030_OTG_CTRL,
+				     TWL4030_OTG_CTRL_DRVVBUS);
+	}
 
 	/* Some sleep just in case to let the vbus to stabilize */
 	msleep(100);
@@ -832,9 +906,11 @@ void twl4030_kick(int on)
 {
 	struct twl4030_usb *twl = twl_superhack;
 
-	twl_forcelink = on;
+	if (twl_forcelink != on) {
+		twl_forcelink = on;
 
-	schedule_work(&twl->vbus_work);
+		schedule_work(&twl->vbus_work);
+	}
 }
 
 #ifdef CONFIG_CHARGER_MAX8903
@@ -1001,6 +1077,7 @@ static int __devinit twl4030_usb_probe(struct platform_device *pdev)
 	twl->usb_mode		= pdata->usb_mode;
 	twl->asleep		= 1;
 	twl->chgd_capable	= twl_rev_is_tps65921();
+	twl->powersource	= TWL_PWR_INT;
 
 	/* init spinlock for workqueue */
 	spin_lock_init(&twl->lock);
@@ -1015,6 +1092,9 @@ static int __devinit twl4030_usb_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, twl);
 	if (device_create_file(&pdev->dev, &dev_attr_vbus))
+		dev_warn(&pdev->dev, "could not create sysfs file\n");
+
+	if (device_create_file(&pdev->dev, &dev_attr_vbussrc))
 		dev_warn(&pdev->dev, "could not create sysfs file\n");
 
 	ATOMIC_INIT_NOTIFIER_HEAD(&twl->otg.notifier);
