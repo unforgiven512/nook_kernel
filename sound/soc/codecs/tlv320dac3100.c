@@ -2723,7 +2723,6 @@ static int dac_level_store(struct device *dev,
 {
     unsigned short gain;
     if (sscanf(buf, "%hu", &gain) == 1) {
-        printk("%s: Set DAC Gain %d\n", AUDIO_NAME, gain);
         if (gain > 255)
             gain = 255;
 
@@ -2749,7 +2748,6 @@ static int hp_analog_gain_store(struct device *dev,
 {
     unsigned short gain;
     if (sscanf(buf, "%hu", &gain) == 1) {
-        printk("%s: Set HP analog gain %d\n", AUDIO_NAME, gain);
         if (gain > 255)
             gain = 255;
         else if (gain < 128)
@@ -2777,7 +2775,6 @@ static int spkr_analog_gain_store(struct device *dev,
 {
     unsigned short gain;
     if (sscanf(buf, "%hu", &gain) == 1) {
-        printk("%s: Set HP analog gain %d\n", AUDIO_NAME, gain);
         if (gain > 255)
             gain = 255;
         else if (gain < 128)
