@@ -176,7 +176,12 @@ static void omap_set_vbus(struct musb *musb, int is_on)
 		devctl |= MUSB_DEVCTL_SESSION;
 
 		MUSB_HST_MODE(musb);
+
+		twl4030_kick(is_on);
 	} else {
+
+		twl4030_kick(is_on);
+		
 		musb->is_active = 0;
 
 		/* NOTE:  we're skipping A_WAIT_VFALL -> A_IDLE and
@@ -190,8 +195,6 @@ static void omap_set_vbus(struct musb *musb, int is_on)
 		MUSB_DEV_MODE(musb);
 	}
 	musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
-
-	twl4030_kick(is_on);
 
 	DBG(1, "VBUS %s, devctl %02x "
 		/* otg %3x conf %08x prcm %08x */ "\n",
