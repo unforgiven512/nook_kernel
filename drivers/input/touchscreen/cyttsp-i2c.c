@@ -1033,6 +1033,9 @@ void cyttsp_xy_worker(struct work_struct *work)
 					input_report_abs(ts->input,
 						ABS_MT_POSITION_Y,
 						ts->prv_mt_pos[id][CY_YPOS]);
+					input_report_key(ts->input,
+						BTN_TOUCH,
+						0);
 					CY_MT_SYNC(ts->input);
 					ts->act_trk[id] = CY_NTCH;
 					ts->prv_mt_pos[id][CY_XPOS] = 0;
@@ -1057,6 +1060,9 @@ void cyttsp_xy_worker(struct work_struct *work)
 					input_report_abs(ts->input,
 						ABS_MT_POSITION_Y,
 						cur_mt_pos[id][CY_YPOS]);
+					input_report_key(ts->input,
+						BTN_TOUCH,
+						1);
 					CY_MT_SYNC(ts->input);
 					ts->act_trk[id] = CY_TCH;
 					ts->prv_mt_pos[id][CY_XPOS] =

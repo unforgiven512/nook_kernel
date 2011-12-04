@@ -146,7 +146,7 @@ static struct cyttsp_platform_data cyttsp_platform_data = {
         .use_st = CY_USE_ST,
         .use_mt = CY_USE_MT,
         .use_hndshk = CY_SEND_HNDSHK,
-        .use_trk_id = CY_USE_TRACKING_ID,
+        .use_trk_id = 1, //CY_USE_TRACKING_ID,
         .use_sleep = CY_USE_SLEEP,
         .use_gestures = 0,
         /* activate up to 4 groups
